@@ -104,6 +104,17 @@ mac_array #(.bw(bw), .psum_bw(psum_bw), .col(col), .row(row)) mac_array_instance
   .valid(valid),
   .out_s(out_s)
 );
+wire [31:0] sram_data_in;
+wire [10:0] sram_addr_in;
+wire [31:0] sram_data_out;
+sram_32b_w2048 #(.num(2048)) sram_inst (
+    .CLK(clk),
+    .D(sram_data_in),
+    .Q(sram_data_out),
+    .CEN(1'b0),
+    .WEN(1'b0),
+    .A(sram_addr_in)
+);
 
 
 initial begin 
