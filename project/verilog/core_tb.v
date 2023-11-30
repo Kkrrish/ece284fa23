@@ -68,7 +68,9 @@ integer error;
 
 // Verification variables
 reg verbose = 1;
+integer clk_cnt = 0;
 reg [31:0] weight_in [63:0];
+reg [31:0] l0_data_out;
 
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
@@ -137,6 +139,8 @@ task check_kernel_loading_sram_to_l0;
     A_xmem = start_addr;
     WEN_xmem = 1;
     CEN_xmem = 0;
+    l0_wr = 1;
+    l0_rd = 0;
     #0.5 clk = 1'b1;
     #0.5 clk = 1'b0; A_xmem = A_xmem + 1;
     #0.5 clk = 1'b1;
@@ -144,15 +148,24 @@ task check_kernel_loading_sram_to_l0;
       #0.5 clk = 1'b0;
       A_xmem = A_xmem + 1;
       if(weight_in[t][31:0] == core_instance.xmem_inst.Q) begin
-        $display("%2d-th read data is %h --- Data matched", t, core_instance.xmem_inst.Q);
+        $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data matched", clk_cnt, t, core_instance.xmem_inst.Q);
       end else begin
-        $display("%2d-th read data is %h --- Data ERROR !!!", t, core_instance.xmem_inst.Q);
+        $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data ERROR !!!", clk_cnt, t, core_instance.xmem_inst.Q);
       end
       
       #0.5 clk = 1'b1;  
     end
+  #0.5 clk = 1'b0;  WEN_xmem = 1;  CEN_xmem = 1; l0_wr = 0;
+  #0.5 clk = 1'b1;
   end
 endtask
+
+initial begin
+  forever begin
+    #0.5; clk_cnt=clk_cnt+1;
+    #0.5;
+  end
+end
 
 initial begin 
 
@@ -261,7 +274,7 @@ initial begin
       if (t>0) A_xmem = A_xmem + 1;
 
       weight_in[t][31:0] = D_xmem;
-      if(verbose) $display("%2d-th written data is %h", t, D_xmem);
+      if(verbose) $display("[%4d] %2d-th data from TB to XMEM is %h", clk_cnt, t, D_xmem);
       
       #0.5 clk = 1'b1;  
     end
@@ -284,10 +297,16 @@ initial begin
     end*/
     /////////////////////////////////////
 
-
-
     /////// Kernel loading to PEs ///////
-    //...
+    #0.5 clk = 1'b0;  l0_rd = 1;
+    #0.5 clk = 1'b1;
+    tick_tock(2);
+    for (t=0; t<2*col-1; t=t+1) begin
+      #0.5 clk = 1'b0;
+      l0_data_out = core_instance.corelet_inst.l0_data_out;
+      $display("[%4d] %2d-th data from L0 to MAC is %h", clk_cnt, t, core_instance.corelet_inst.l0_data_out);
+      #0.5 clk = 1'b1;
+    end
     /////////////////////////////////////
   
 

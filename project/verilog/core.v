@@ -1,7 +1,3 @@
-`define INST_CEN_XMEM 19
-`define INST_WEN_XMEM 18
-`define INST_A_XMEM 17:7
-
 module core #(
     parameter row = 8,
     parameter col = 8,
@@ -16,6 +12,7 @@ module core #(
     output  [psum_bw*col-1:0] sfp_out
 );
 
+// Activation/Kernel Memory
 wire xmem_chip_en;
 wire xmem_wr_en;
 wire [31:0] xmem_data_in;
@@ -34,6 +31,47 @@ sram_32b_w2048 #(.num(2048)) xmem_inst(
     .CEN(xmem_chip_en),
     .WEN(xmem_wr_en),
     .A(xmem_addr_in)
+);
+
+// PSUM Memory
+wire pmem_chip_en;
+wire pmem_wr_en;
+wire [31:0] pmem_data_in;
+wire [10:0] pmem_addr_in;
+wire [31:0] pmem_data_out;
+
+//@FIXME
+//assign pmem_chip_en = inst[`INST_CEN_XMEM];
+//assign pmem_wr_en   = inst[`INST_WEN_XMEM];
+//assign pmem_addr_in = inst[`INST_A_XMEM];
+//assign pmem_data_in = D_xmem;
+
+sram_32b_w2048 #(.num(2048)) pmem_inst(
+    .CLK(clk),
+    .D(pmem_data_in),
+    .Q(pmem_data_out),
+    .CEN(pmem_chip_en),
+    .WEN(pmem_wr_en),
+    .A(pmem_addr_in)
+);
+
+// Corelet - contains L0, MAC Array, OFIFIO and SFP
+wire [bw*row-1:0]       corelet_data_in_w;
+wire [psum_bw*col-1:0]  corelet_data_in_n;
+wire [psum_bw*col-1:0]  corelet_data_out;
+wire [psum_bw*col-1:0]  corelet_sfp_out;
+
+//@FIXME: Assign corelet inputs
+assign corelet_data_in_w = xmem_data_out;
+
+corelet #(.row(row), .col(col), .bw(bw), .psum_bw(psum_bw)) corelet_inst(
+    .clk(clk),
+    .reset(reset),
+    .inst(inst),
+    .data_in_w(corelet_data_in_w),
+    .data_in_n(corelet_data_in_n),
+    .data_out(corelet_data_out),
+    .sfp_out(corelet_sfp_out)
 );
 
 endmodule

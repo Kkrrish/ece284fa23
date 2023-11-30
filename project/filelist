@@ -9,5 +9,6 @@
 ./verilog/fifo_depth64.v
 ./verilog/l0.v
 ./verilog/ofifo.v
+./verilog/corelet.v
 ./verilog/core.v
 ./verilog/core_tb.v
