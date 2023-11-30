@@ -66,6 +66,10 @@ integer captured_data;
 integer t, i, j, k, kij;
 integer error;
 
+// Verification variables
+reg verbose = 1;
+reg [31:0] weight_in [63:0];
+
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
 assign inst_q[31] = WEN_pmem_q;
@@ -81,17 +85,17 @@ assign inst_q[2]   = l0_wr_q;
 assign inst_q[1]   = execute_q; 
 assign inst_q[0]   = load_q; 
 
-//@FIXME
-/*core  #(.bw(bw), .col(col), .row(row)) core_instance (
-	.clk(clk), 
-	.inst(inst_q),
-	.ofifo_valid(ofifo_valid),
-        .D_xmem(D_xmem_q), 
-        .sfp_out(sfp_out), 
-	.reset(reset));*/
+core  #(.bw(bw), .col(col), .row(row)) core_instance (
+  .clk(clk), 
+  .inst(inst_q),
+  .ofifo_valid(ofifo_valid),
+  .D_xmem(D_xmem_q), 
+  .sfp_out(sfp_out), 
+  .reset(reset)
+);
 
 //@FIXME: Temporary testing unit
-wire  [row*bw-1:0] in_w; // inst[1]:execute, inst[0]: kernel loading
+/*wire  [row*bw-1:0] in_w; // inst[1]:execute, inst[0]: kernel loading
 wire  [psum_bw*col-1:0] in_n;
 wire [col-1:0] valid;
 wire [psum_bw*col-1:0] out_s;
@@ -114,8 +118,41 @@ sram_32b_w2048 #(.num(2048)) sram_inst (
     .CEN(1'b0),
     .WEN(1'b0),
     .A(sram_addr_in)
-);
+);*/
 
+task tick_tock;
+  input integer delay;
+  begin
+    for (i=0; i<delay ; i=i+1) begin
+      #0.5 clk = 1'b0;
+      #0.5 clk = 1'b1;  
+    end
+  end
+endtask
+
+task check_kernel_loading_sram_to_l0;
+  input [10:0] start_addr;
+  begin  
+    #0.5 clk = 1'b0;
+    A_xmem = start_addr;
+    WEN_xmem = 1;
+    CEN_xmem = 0;
+    #0.5 clk = 1'b1;
+    #0.5 clk = 1'b0; A_xmem = A_xmem + 1;
+    #0.5 clk = 1'b1;
+    for (t=0; t<col; t=t+1) begin  
+      #0.5 clk = 1'b0;
+      A_xmem = A_xmem + 1;
+      if(weight_in[t][31:0] == core_instance.xmem_inst.Q) begin
+        $display("%2d-th read data is %h --- Data matched", t, core_instance.xmem_inst.Q);
+      end else begin
+        $display("%2d-th read data is %h --- Data ERROR !!!", t, core_instance.xmem_inst.Q);
+      end
+      
+      #0.5 clk = 1'b1;  
+    end
+  end
+endtask
 
 initial begin 
 
@@ -136,7 +173,7 @@ initial begin
   $dumpvars(0,core_tb);
 
   //@FIXME
-  x_file = $fopen("activation_tile0.txt", "r");
+  x_file = $fopen("./stimulus_files/activation_tile0.txt", "r");
   // Following three lines are to remove the first three comment lines of the file
   x_scan_file = $fscanf(x_file,"%s", captured_data);
   x_scan_file = $fscanf(x_file,"%s", captured_data);
@@ -160,6 +197,7 @@ initial begin
 
   //@FIXME
   /////// Activation data writing to memory ///////
+  $display("==== Writing activation data to XMEM ====");
   for (t=0; t<len_nij; t=t+1) begin  
     #0.5 clk = 1'b0;  x_scan_file = $fscanf(x_file,"%32b", D_xmem); WEN_xmem = 0; CEN_xmem = 0; if (t>0) A_xmem = A_xmem + 1;
     #0.5 clk = 1'b1;   
@@ -176,16 +214,19 @@ initial begin
 
     //@FIXME
     case(kij)
-     0: w_file_name = "weight_itile0_otile0_kij0.txt";
-     1: w_file_name = "weight_itile0_otile0_kij1.txt";
-     2: w_file_name = "weight_itile0_otile0_kij2.txt";
-     3: w_file_name = "weight_itile0_otile0_kij3.txt";
-     4: w_file_name = "weight_itile0_otile0_kij4.txt";
-     5: w_file_name = "weight_itile0_otile0_kij5.txt";
-     6: w_file_name = "weight_itile0_otile0_kij6.txt";
-     7: w_file_name = "weight_itile0_otile0_kij7.txt";
-     8: w_file_name = "weight_itile0_otile0_kij8.txt";
+     0: w_file_name = "./stimulus_files/weight_itile0_otile0_kij0.txt";
+     1: w_file_name = "./stimulus_files/weight_itile0_otile0_kij1.txt";
+     2: w_file_name = "./stimulus_files/weight_itile0_otile0_kij2.txt";
+     3: w_file_name = "./stimulus_files/weight_itile0_otile0_kij3.txt";
+     4: w_file_name = "./stimulus_files/weight_itile0_otile0_kij4.txt";
+     5: w_file_name = "./stimulus_files/weight_itile0_otile0_kij5.txt";
+     6: w_file_name = "./stimulus_files/weight_itile0_otile0_kij6.txt";
+     7: w_file_name = "./stimulus_files/weight_itile0_otile0_kij7.txt";
+     8: w_file_name = "./stimulus_files/weight_itile0_otile0_kij8.txt";
     endcase
+
+    //@FIXME
+    w_file_name = "./stimulus_files/weight.txt";
     
 
     w_file = $fopen(w_file_name, "r");
@@ -209,11 +250,19 @@ initial begin
     #0.5 clk = 1'b1;   
 
     /////// Kernel data writing to memory ///////
-
+    $display("==== Writing kernel data for kij %2d to XMEM ====", kij);
     A_xmem = 11'b10000000000;
 
     for (t=0; t<col; t=t+1) begin  
-      #0.5 clk = 1'b0;  w_scan_file = $fscanf(w_file,"%32b", D_xmem); WEN_xmem = 0; CEN_xmem = 0; if (t>0) A_xmem = A_xmem + 1; 
+      #0.5 clk = 1'b0;
+      w_scan_file = $fscanf(w_file,"%32b", D_xmem);
+      WEN_xmem = 0;
+      CEN_xmem = 0;
+      if (t>0) A_xmem = A_xmem + 1;
+
+      weight_in[t][31:0] = D_xmem;
+      if(verbose) $display("%2d-th written data is %h", t, D_xmem);
+      
       #0.5 clk = 1'b1;  
     end
 
@@ -221,10 +270,18 @@ initial begin
     #0.5 clk = 1'b1; 
     /////////////////////////////////////
 
-
+    tick_tock(5);
 
     /////// Kernel data writing to L0 ///////
-    //...
+    check_kernel_loading_sram_to_l0(11'b10000000000);
+    /*A_xmem = 11'b10000000000;
+    WEN_xmem = 1;
+    CEN_xmem = 0;
+    for (t=0; t<col; t=t+1) begin  
+      #0.5 clk = 1'b0;
+      if(t>0) A_xmem = A_xmem + 1;
+      #0.5 clk = 1'b1;  
+    end*/
     /////////////////////////////////////
 
 
