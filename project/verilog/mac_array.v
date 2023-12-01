@@ -19,7 +19,7 @@ module mac_array (clk, reset, out_s, in_w, in_n, inst_w, valid);
   wire [row*col-1:0] valid_temp;
 
   assign out_s = temp[psum_bw*col*9-1:psum_bw*col*8];
-  assign temp[psum_bw*col*1-1:psum_bw*col*0] = 0;
+  assign temp[psum_bw*col*1-1:psum_bw*col*0] = in_n;
   assign valid = valid_temp[row*col-1:(row-1)*col];
 
   genvar i;

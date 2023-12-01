@@ -1,6 +1,10 @@
+`define INST_CEN_PMEM   32
+`define INST_WEN_PMEM   31
+`define INST_A_PMEM     30:20
 `define INST_CEN_XMEM   19
 `define INST_WEN_XMEM   18
 `define INST_A_XMEM     17:7
+`define INST_OFIFO_RD   6
 `define INST_L0_RD      3
 `define INST_L0_WR      2
 
@@ -44,8 +48,52 @@ l0 #(.row(row), .bw(bw)) l0_inst(
 );
 
 // MAC Array
+wire [bw*row-1:0]       mac_data_in_w;
+wire [psum_bw*col-1:0]  mac_data_in_n;
+wire [1:0]              mac_inst_w;
+wire [psum_bw*col-1:0]  mac_out_s;
+wire [col-1:0]          mac_valid;
 
-// OFIFIO
+//@FIXME: Assign inputs
+assign mac_inst_w       = inst[1:0];
+assign mac_data_in_w    = l0_data_out;
+assign mac_data_in_n    = 0; //@FIXME
+
+mac_array #(.bw(bw), .psum_bw(psum_bw), .col(col), .row(row)) mac_array_inst(
+    .clk(clk),
+    .reset(reset),
+    .in_w(mac_data_in_w),
+    .in_n(mac_data_in_n),
+    .inst_w(mac_inst_w),
+    .out_s(mac_out_s),
+    .valid(mac_valid)
+);
+
+wire                    ofifo_rd;
+wire [col-1:0]          ofifo_wr;
+wire [psum_bw*col-1:0]  ofifo_data_in;
+wire [psum_bw*col-1:0]  ofifo_data_out;
+wire                    ofifo_full;
+wire                    ofifo_ready;
+wire                    ofifo_valid;
+
+//@FIXME: Assign inputs
+assign ofifo_data_in = mac_out_s;
+assign ofifo_wr = mac_valid;
+assign ofifo_rd = inst[`INST_OFIFO_RD];
+
+// OFIFO
+ofifo #(.col(col), .bw(psum_bw)) ofifo_inst(
+    .clk(clk),
+    .reset(reset),
+    .rd(ofifo_rd),
+    .wr(ofifo_wr),
+    .in(ofifo_data_in),
+    .out(ofifo_data_out),
+    .o_full(ofifo_full),
+    .o_ready(ofifo_ready),
+    .o_valid(ofifo_valid)
+);
 
 // SFP
 

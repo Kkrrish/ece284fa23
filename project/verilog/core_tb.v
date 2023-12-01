@@ -69,7 +69,8 @@ integer error;
 // Verification variables
 reg verbose = 1;
 integer clk_cnt = 0;
-reg [31:0] weight_in [63:0];
+reg [31:0] weight_in [col-1:0];
+reg [31:0] data_in [len_nij-1:0];
 reg [31:0] l0_data_out;
 
 assign inst_q[33] = acc_q;
@@ -96,32 +97,6 @@ core  #(.bw(bw), .col(col), .row(row)) core_instance (
   .reset(reset)
 );
 
-//@FIXME: Temporary testing unit
-/*wire  [row*bw-1:0] in_w; // inst[1]:execute, inst[0]: kernel loading
-wire  [psum_bw*col-1:0] in_n;
-wire [col-1:0] valid;
-wire [psum_bw*col-1:0] out_s;
-mac_array #(.bw(bw), .psum_bw(psum_bw), .col(col), .row(row)) mac_array_instance (
-  .clk(clk),
-  .reset(reset),
-  .in_w(in_w),
-  .in_n(in_n),
-  .inst_w(inst_w),
-  .valid(valid),
-  .out_s(out_s)
-);
-wire [31:0] sram_data_in;
-wire [10:0] sram_addr_in;
-wire [31:0] sram_data_out;
-sram_32b_w2048 #(.num(2048)) sram_inst (
-    .CLK(clk),
-    .D(sram_data_in),
-    .Q(sram_data_out),
-    .CEN(1'b0),
-    .WEN(1'b0),
-    .A(sram_addr_in)
-);*/
-
 task tick_tock;
   input integer delay;
   begin
@@ -132,8 +107,10 @@ task tick_tock;
   end
 endtask
 
-task check_kernel_loading_sram_to_l0;
+task kernel_loading_sram_to_l0;
   input [10:0] start_addr;
+  input integer count;
+  input data_is_weights;
   begin  
     #0.5 clk = 1'b0;
     A_xmem = start_addr;
@@ -144,25 +121,123 @@ task check_kernel_loading_sram_to_l0;
     #0.5 clk = 1'b1;
     #0.5 clk = 1'b0; A_xmem = A_xmem + 1;
     #0.5 clk = 1'b1;
-    for (t=0; t<col; t=t+1) begin  
+    for (t=0; t<count; t=t+1) begin  
       #0.5 clk = 1'b0;
       A_xmem = A_xmem + 1;
-      if(weight_in[t][31:0] == core_instance.xmem_inst.Q) begin
-        $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data matched", clk_cnt, t, core_instance.xmem_inst.Q);
-      end else begin
+      if(data_is_weights == 1) begin
+        if(weight_in[t][31:0] == core_instance.xmem_inst.Q) begin
+          $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data matched", clk_cnt, t, core_instance.xmem_inst.Q);
+        end else begin
         $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data ERROR !!!", clk_cnt, t, core_instance.xmem_inst.Q);
-      end
-      
+        end
+      end else begin
+        if(data_in[t][31:0] == core_instance.xmem_inst.Q) begin
+          $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data matched", clk_cnt, t, core_instance.xmem_inst.Q);
+        end else begin
+        $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data ERROR !!!", clk_cnt, t, core_instance.xmem_inst.Q);
+        end
+      end 
       #0.5 clk = 1'b1;  
     end
-  #0.5 clk = 1'b0;  WEN_xmem = 1;  CEN_xmem = 1; l0_wr = 0;
-  #0.5 clk = 1'b1;
+    #0.5 clk = 1'b0;  WEN_xmem = 1;  CEN_xmem = 1; l0_wr = 0;
+    #0.5 clk = 1'b1;
   end
 endtask
 
+task loading_l0_to_mac;
+  input integer number_of_cycles;
+  input ld_;
+  input execute_;
+  begin  
+    #0.5 clk = 1'b0;
+    l0_rd = 1;  // Read out from L0
+    #0.5 clk = 1'b1;
+    #0.5 clk = 1'b0;
+    load = ld_;   // Load into MAC
+    execute = execute_;
+    #0.5 clk = 1'b1;
+    tick_tock(1);
+    for (t=0; t<number_of_cycles; t=t+1) begin
+      #0.5 clk = 1'b0;
+      if(t>(number_of_cycles-col-2)) begin
+        load = 0; execute = 0;
+      end
+      l0_data_out = core_instance.corelet_inst.l0_data_out;
+      $display("[%4d] [%2dth] [L0 to MAC]   %h", clk_cnt, t, core_instance.corelet_inst.l0_data_out);
+      //$display("[%4d]                               OUT_S: %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.out_s);
+      //$display("[%4d]                               IN_N : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.in_n);
+      //$display("[%4d]                               A_Q : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.a_q);
+      //$display("[%4d]                               B_Q : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.b_q);
+      //$display("[%4d]                               C_Q : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.c_q);
+      //$display("[%4d] MAC inst %h, input %h, load_ready_q %b, weight %b", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[8].mac_row_instance.col_num[8].mac_tile_instance.inst_w, core_instance.corelet_inst.mac_array_inst.row_num[8].mac_row_instance.col_num[8].mac_tile_instance.in_w, core_instance.corelet_inst.mac_array_inst.row_num[8].mac_row_instance.col_num[8].mac_tile_instance.load_ready_q, core_instance.corelet_inst.mac_array_inst.row_num[8].mac_row_instance.col_num[8].mac_tile_instance.b_q );
+      #0.5 clk = 1'b1;
+    end
+    #0.5 clk = 1'b0;  l0_rd = 0; load = 0; execute = 0;
+    #0.5 clk = 1'b1;
+  end
+endtask
+
+task read_ofifo_to_pmem;
+  input [10:0] start_addr;
+  input integer number_of_cycles;
+  begin
+    $display("==== Writing OFIFO data for kij %2d to PMEM ====", kij);
+    #0.5 clk = 1'b0;
+    WEN_pmem = 0;
+    CEN_pmem = 0;
+    ofifo_rd = 1;
+    A_pmem = start_addr;
+    #0.5 clk = 1'b1;
+    #0.5 clk = 1'b0; A_pmem = A_pmem + 1;
+    #0.5 clk = 1'b1;
+    for (t=0; t<number_of_cycles; t=t+1) begin  
+      #0.5 clk = 1'b0;
+      A_pmem = A_pmem + 1;
+      $display("[%4d] [%2dth] [SFP to PMEM] %h, Valid: %b", clk_cnt, t, core_instance.pmem_data_in, core_instance.pmem_wr_en);
+      #0.5 clk = 1'b1;  
+    end
+
+    #0.5 clk = 1'b0;  WEN_pmem = 1;  CEN_pmem = 1; ofifo_rd = 0;
+    #0.5 clk = 1'b1;
+  end
+endtask
+
+task check_kernel_loading_at_mac;
+  input bool dummy;
+  begin
+    //$display("[%4d] [check_kernel_loading_at_mac] Col %0d Row %0d:  RTL weight %h", clk_cnt, 0, 0, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.b_q);
+    //for (i=0; i<col; i=i+1) begin
+    //  for (j=0; j<row; j=j+1) begin
+        //if(core_instance.corelet_inst.mac_array_inst.mac_row_instance[j].mac_tile_instance[i].mac_instance.b_q != weight[t][bw*(j+1)-1:bw*j]) begin
+        //  $display("[%4d] [check_kernel_loading_at_mac] Col %0d Row %0d:  RTL weight %4b, DV weight %4b", clk_cnt, i, j, weight[t][bw*(j+1)-1:bw*j], core_instance.corelet_inst.mac_array_inst.mac_row_instance[j].mac_tile_instance[i].mac_instance.b_q);
+        //end
+    //    $display("[%4d] [check_kernel_loading_at_mac] Col %0d Row %0d:  RTL weight %h", clk_cnt, i, j, core_instance.corelet_inst.mac_array_inst.row_num[j].mac_row_instance.col_num[i].mac_tile_instance.b_q);
+    //  end
+    //end
+  end
+endtask
+
+// Separate thread to maintain clock count
 initial begin
   forever begin
     #0.5; clk_cnt=clk_cnt+1;
+    #0.5;
+  end
+end
+
+// Temporary Thread to monitor outputs from MAC Array
+initial begin
+  forever begin
+    #0.5;
+    if(|core_instance.corelet_inst.mac_valid) $display("[%4d]                               PSUM: %h, Valid: %b", clk_cnt, core_instance.corelet_inst.mac_out_s, core_instance.corelet_inst.mac_valid);
+    /*if(core_instance.corelet_inst.mac_valid[0] == 1) $display("[%4d] Col 0, PSUM: %h", clk_cnt, core_instance.corelet_inst.mac_out_s[15:0]);
+    if(core_instance.corelet_inst.mac_valid[1] == 1) $display("Col 1, PSUM: %h", core_instance.corelet_inst.mac_out_s[31:16]);
+    if(core_instance.corelet_inst.mac_valid[2] == 1) $display("Col 2, PSUM: %h", core_instance.corelet_inst.mac_out_s[47:32]);
+    if(core_instance.corelet_inst.mac_valid[3] == 1) $display("Col 3, PSUM: %h", core_instance.corelet_inst.mac_out_s[63:48]);
+    if(core_instance.corelet_inst.mac_valid[4] == 1) $display("Col 4, PSUM: %h", core_instance.corelet_inst.mac_out_s[79:64]);
+    if(core_instance.corelet_inst.mac_valid[5] == 1) $display("Col 5, PSUM: %h", core_instance.corelet_inst.mac_out_s[95:80]);
+    if(core_instance.corelet_inst.mac_valid[6] == 1) $display("Col 6, PSUM: %h", core_instance.corelet_inst.mac_out_s[111:96]);
+    if(core_instance.corelet_inst.mac_valid[7] == 1) $display("[%4d] Col 7, PSUM: %h", clk_cnt, core_instance.corelet_inst.mac_out_s[127:112]);*/
     #0.5;
   end
 end
@@ -196,10 +271,7 @@ initial begin
   #0.5 clk = 1'b0;   reset = 1;
   #0.5 clk = 1'b1; 
 
-  for (i=0; i<10 ; i=i+1) begin
-    #0.5 clk = 1'b0;
-    #0.5 clk = 1'b1;  
-  end
+  tick_tock(5);
 
   #0.5 clk = 1'b0;   reset = 0;
   #0.5 clk = 1'b1; 
@@ -212,7 +284,15 @@ initial begin
   /////// Activation data writing to memory ///////
   $display("==== Writing activation data to XMEM ====");
   for (t=0; t<len_nij; t=t+1) begin  
-    #0.5 clk = 1'b0;  x_scan_file = $fscanf(x_file,"%32b", D_xmem); WEN_xmem = 0; CEN_xmem = 0; if (t>0) A_xmem = A_xmem + 1;
+    #0.5 clk = 1'b0;
+    x_scan_file = $fscanf(x_file,"%32b", D_xmem);
+    WEN_xmem = 0;
+    CEN_xmem = 0;
+    if (t>0) A_xmem = A_xmem + 1;
+    
+    data_in[t][31:0] = D_xmem;
+    if(verbose) $display("[%4d] %2d-th data from TB to XMEM is %h", clk_cnt, t, D_xmem);
+
     #0.5 clk = 1'b1;   
   end
 
@@ -223,7 +303,7 @@ initial begin
   /////////////////////////////////////////////////
 
 
-  for (kij=0; kij<9; kij=kij+1) begin  // kij loop
+  for (kij=0; kij<1; kij=kij+1) begin  // kij loop
 
     //@FIXME
     case(kij)
@@ -251,16 +331,12 @@ initial begin
     #0.5 clk = 1'b0;   reset = 1;
     #0.5 clk = 1'b1; 
 
-    for (i=0; i<10 ; i=i+1) begin
-      #0.5 clk = 1'b0;
-      #0.5 clk = 1'b1;  
-    end
+    tick_tock(5);
 
     #0.5 clk = 1'b0;   reset = 0;
     #0.5 clk = 1'b1; 
-
-    #0.5 clk = 1'b0;   
-    #0.5 clk = 1'b1;   
+    
+    tick_tock(1);  
 
     /////// Kernel data writing to memory ///////
     $display("==== Writing kernel data for kij %2d to XMEM ====", kij);
@@ -286,68 +362,41 @@ initial begin
     tick_tock(5);
 
     /////// Kernel data writing to L0 ///////
-    check_kernel_loading_sram_to_l0(11'b10000000000);
-    /*A_xmem = 11'b10000000000;
-    WEN_xmem = 1;
-    CEN_xmem = 0;
-    for (t=0; t<col; t=t+1) begin  
-      #0.5 clk = 1'b0;
-      if(t>0) A_xmem = A_xmem + 1;
-      #0.5 clk = 1'b1;  
-    end*/
+    kernel_loading_sram_to_l0(11'b10000000000, col, 1);
     /////////////////////////////////////
 
     /////// Kernel loading to PEs ///////
-    #0.5 clk = 1'b0;  l0_rd = 1;
-    #0.5 clk = 1'b1;
-    tick_tock(2);
-    for (t=0; t<2*col-1; t=t+1) begin
-      #0.5 clk = 1'b0;
-      l0_data_out = core_instance.corelet_inst.l0_data_out;
-      $display("[%4d] %2d-th data from L0 to MAC is %h", clk_cnt, t, core_instance.corelet_inst.l0_data_out);
-      #0.5 clk = 1'b1;
-    end
+    loading_l0_to_mac(2*col-1, 1, 0);
     /////////////////////////////////////
-  
-
 
     ////// provide some intermission to clear up the kernel loading ///
-    #0.5 clk = 1'b0;  load = 0; l0_rd = 0;
-    #0.5 clk = 1'b1;  
-  
-
-    for (i=0; i<10 ; i=i+1) begin
-      #0.5 clk = 1'b0;
-      #0.5 clk = 1'b1;  
-    end
+    tick_tock(col);
+    check_kernel_loading_at_mac(0);
     /////////////////////////////////////
-
-
 
     /////// Activation data writing to L0 ///////
-    //...
+    kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
     /////////////////////////////////////
-
-
 
     /////// Execution ///////
-    //...
+    loading_l0_to_mac(len_nij+col-1, 0, 1);
     /////////////////////////////////////
 
-
+    tick_tock(col);
 
     //////// OFIFO READ ////////
     // Ideally, OFIFO should be read while execution, but we have enough ofifo
     // depth so we can fetch out after execution.
-    //...
+    read_ofifo_to_pmem(A_pmem, len_nij);
     /////////////////////////////////////
 
 
   end  // end of kij loop
 
+  tick_tock(20);
 
   ////////// Accumulation /////////
-  out_file = $fopen("out.txt", "r");  
+  /*out_file = $fopen("out.txt", "r");  
 
   // Following three lines are to remove the first three comment lines of the file
   out_scan_file = $fscanf(out_file,"%s", answer); 
@@ -361,7 +410,7 @@ initial begin
   $display("############ Verification Start during accumulation #############"); 
 
   //@FIXME
-  /*for (i=0; i<len_onij+1; i=i+1) begin 
+  for (i=0; i<len_onij+1; i=i+1) begin 
 
     #0.5 clk = 1'b0; 
     #0.5 clk = 1'b1; 
@@ -409,12 +458,9 @@ initial begin
   //$fclose(acc_file);
   //////////////////////////////////
 
-  for (t=0; t<10; t=t+1) begin  
-    #0.5 clk = 1'b0;  
-    #0.5 clk = 1'b1;  
-  end
-
-  #10 $finish;
+  tick_tock(100);
+  $display("[%4d] Last cycle", clk_cnt);
+  $finish;
 
 end
 

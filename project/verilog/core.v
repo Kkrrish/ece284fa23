@@ -24,7 +24,7 @@ assign xmem_wr_en   = inst[`INST_WEN_XMEM];
 assign xmem_addr_in = inst[`INST_A_XMEM];
 assign xmem_data_in = D_xmem;
 
-sram_32b_w2048 #(.num(2048)) xmem_inst(
+sram_32b_w2048 #(.num(2048), .width(32)) xmem_inst(
     .CLK(clk),
     .D(xmem_data_in),
     .Q(xmem_data_out),
@@ -36,17 +36,17 @@ sram_32b_w2048 #(.num(2048)) xmem_inst(
 // PSUM Memory
 wire pmem_chip_en;
 wire pmem_wr_en;
-wire [31:0] pmem_data_in;
+wire [psum_bw*col-1:0] pmem_data_in;
 wire [10:0] pmem_addr_in;
-wire [31:0] pmem_data_out;
+wire [psum_bw*col-1:0] pmem_data_out;
 
+assign pmem_chip_en = inst[`INST_CEN_PMEM];
+assign pmem_wr_en   = inst[`INST_WEN_PMEM];
+assign pmem_addr_in = inst[`INST_A_PMEM];
 //@FIXME
-//assign pmem_chip_en = inst[`INST_CEN_XMEM];
-//assign pmem_wr_en   = inst[`INST_WEN_XMEM];
-//assign pmem_addr_in = inst[`INST_A_XMEM];
-//assign pmem_data_in = D_xmem;
+assign pmem_data_in = corelet_inst.ofifo_data_out;
 
-sram_32b_w2048 #(.num(2048)) pmem_inst(
+sram_32b_w2048 #(.num(2048), .width(128)) pmem_inst(
     .CLK(clk),
     .D(pmem_data_in),
     .Q(pmem_data_out),
