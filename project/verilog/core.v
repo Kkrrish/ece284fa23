@@ -43,7 +43,7 @@ wire [psum_bw*col-1:0] pmem_data_out;
 assign pmem_chip_en = inst[`INST_CEN_PMEM];
 assign pmem_wr_en   = inst[`INST_WEN_PMEM];
 assign pmem_addr_in = inst[`INST_A_PMEM];
-//@FIXME
+//assign pmem_data_in = corelet_sfp_out;
 assign pmem_data_in = corelet_inst.ofifo_data_out;
 
 sram_32b_w2048 #(.num(2048), .width(128)) pmem_inst(
@@ -63,6 +63,8 @@ wire [psum_bw*col-1:0]  corelet_sfp_out;
 
 //@FIXME: Assign corelet inputs
 assign corelet_data_in_w = xmem_data_out;
+assign corelet_data_in_n = pmem_data_out;
+assign sfp_out = corelet_sfp_out;
 
 corelet #(.row(row), .col(col), .bw(bw), .psum_bw(psum_bw)) corelet_inst(
     .clk(clk),

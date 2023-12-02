@@ -1,3 +1,4 @@
+`define INST_SFP_ACC    33
 `define INST_CEN_PMEM   32
 `define INST_WEN_PMEM   31
 `define INST_A_PMEM     30:20
@@ -81,6 +82,7 @@ wire                    ofifo_valid;
 assign ofifo_data_in = mac_out_s;
 assign ofifo_wr = mac_valid;
 assign ofifo_rd = inst[`INST_OFIFO_RD];
+assign data_out = ofifo_data_out;
 
 // OFIFO
 ofifo #(.col(col), .bw(psum_bw)) ofifo_inst(
@@ -96,5 +98,27 @@ ofifo #(.col(col), .bw(psum_bw)) ofifo_inst(
 );
 
 // SFP
+wire [psum_bw*col-1:0]  sfp_in;
+wire [psum_bw-1:0]      sfp_thres;
+wire                    sfp_acc;
+wire                    sfp_relu;
+
+assign sfp_in = data_in_n;
+assign sfp_thres = 1'b0;
+assign sfp_acc = inst[`INST_SFP_ACC];
+assign sfp_relu = 1'b0; //@FIXME
+
+genvar i;
+for(i=1; i<col+1; i=i+1) begin : sfp_num
+    sfp #(.bw(psum_bw), .psum_bw(psum_bw)) sfp_inst(
+        .clk(clk),
+        .reset(reset),
+        .acc(sfp_acc),
+        .relu(sfp_relu),
+        .thres(sfp_thres),
+        .in(sfp_in[psum_bw*i-1:psum_bw*(i-1)]),
+        .out(sfp_out[psum_bw*i-1:psum_bw*(i-1)])
+    );
+end
 
 endmodule

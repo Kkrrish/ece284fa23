@@ -7,10 +7,13 @@ module core_tb;
 parameter bw = 4;
 parameter psum_bw = 16;
 parameter len_kij = 9;
+parameter len_kij_dim_0 = 3;
 parameter len_onij = 16;
+parameter len_onij_dim_1 = 4;
 parameter col = 8;
 parameter row = 8;
 parameter len_nij = 36;
+parameter len_nij_dim_1 = 6;
 
 reg clk = 0;
 reg reset = 1;
@@ -183,17 +186,17 @@ task read_ofifo_to_pmem;
   begin
     $display("==== Writing OFIFO data for kij %2d to PMEM ====", kij);
     #0.5 clk = 1'b0;
-    WEN_pmem = 0;
-    CEN_pmem = 0;
     ofifo_rd = 1;
     A_pmem = start_addr;
     #0.5 clk = 1'b1;
-    #0.5 clk = 1'b0; A_pmem = A_pmem + 1;
+    #0.5 clk = 1'b0;
+    WEN_pmem = 0;
+    CEN_pmem = 0; 
     #0.5 clk = 1'b1;
     for (t=0; t<number_of_cycles; t=t+1) begin  
       #0.5 clk = 1'b0;
       A_pmem = A_pmem + 1;
-      $display("[%4d] [%2dth] [SFP to PMEM] %h, Valid: %b", clk_cnt, t, core_instance.pmem_data_in, core_instance.pmem_wr_en);
+      //$display("[%4d] [%2dth] [SFP to PMEM] %h, Valid: %b", clk_cnt, t, core_instance.pmem_data_in, core_instance.pmem_wr_en);
       #0.5 clk = 1'b1;  
     end
 
@@ -230,14 +233,15 @@ initial begin
   forever begin
     #0.5;
     if(|core_instance.corelet_inst.mac_valid) $display("[%4d]                               PSUM: %h, Valid: %b", clk_cnt, core_instance.corelet_inst.mac_out_s, core_instance.corelet_inst.mac_valid);
-    /*if(core_instance.corelet_inst.mac_valid[0] == 1) $display("[%4d] Col 0, PSUM: %h", clk_cnt, core_instance.corelet_inst.mac_out_s[15:0]);
-    if(core_instance.corelet_inst.mac_valid[1] == 1) $display("Col 1, PSUM: %h", core_instance.corelet_inst.mac_out_s[31:16]);
-    if(core_instance.corelet_inst.mac_valid[2] == 1) $display("Col 2, PSUM: %h", core_instance.corelet_inst.mac_out_s[47:32]);
-    if(core_instance.corelet_inst.mac_valid[3] == 1) $display("Col 3, PSUM: %h", core_instance.corelet_inst.mac_out_s[63:48]);
-    if(core_instance.corelet_inst.mac_valid[4] == 1) $display("Col 4, PSUM: %h", core_instance.corelet_inst.mac_out_s[79:64]);
-    if(core_instance.corelet_inst.mac_valid[5] == 1) $display("Col 5, PSUM: %h", core_instance.corelet_inst.mac_out_s[95:80]);
-    if(core_instance.corelet_inst.mac_valid[6] == 1) $display("Col 6, PSUM: %h", core_instance.corelet_inst.mac_out_s[111:96]);
-    if(core_instance.corelet_inst.mac_valid[7] == 1) $display("[%4d] Col 7, PSUM: %h", clk_cnt, core_instance.corelet_inst.mac_out_s[127:112]);*/
+    #0.5;
+  end
+end
+
+// Temporary Thread to monitor writes to PMEM
+initial begin
+  forever begin
+    #0.5;
+    if(!core_instance.pmem_chip_en & !core_instance.pmem_wr_en) $display("[%4d]                                                               PMEM Addr: %h, Data: %h", clk_cnt, core_instance.pmem_addr_in, core_instance.pmem_data_in);
     #0.5;
   end
 end
@@ -303,7 +307,7 @@ initial begin
   /////////////////////////////////////////////////
 
 
-  for (kij=0; kij<1; kij=kij+1) begin  // kij loop
+  for (kij=0; kij<9; kij=kij+1) begin  // kij loop
 
     //@FIXME
     case(kij)
@@ -396,57 +400,59 @@ initial begin
   tick_tock(20);
 
   ////////// Accumulation /////////
-  /*out_file = $fopen("out.txt", "r");  
+  acc_file = $fopen("./stimulus_files/acc_addr.txt", "r");
+  //out_file = $fopen("out.txt", "r");  
 
   // Following three lines are to remove the first three comment lines of the file
-  out_scan_file = $fscanf(out_file,"%s", answer); 
-  out_scan_file = $fscanf(out_file,"%s", answer); 
-  out_scan_file = $fscanf(out_file,"%s", answer); 
+  //out_scan_file = $fscanf(out_file,"%s", answer); 
+  //out_scan_file = $fscanf(out_file,"%s", answer); 
+  //out_scan_file = $fscanf(out_file,"%s", answer); 
 
   error = 0;
 
-
-
   $display("############ Verification Start during accumulation #############"); 
-
-  //@FIXME
+  
   for (i=0; i<len_onij+1; i=i+1) begin 
 
     #0.5 clk = 1'b0; 
     #0.5 clk = 1'b1; 
 
     if (i>0) begin
-     out_scan_file = $fscanf(out_file,"%128b", answer); // reading from out file to answer
-       if (sfp_out == answer)
-         $display("%2d-th output featuremap Data matched! :D", i); 
-       else begin
-         $display("%2d-th output featuremap Data ERROR!!", i); 
-         $display("sfpout: %128b", sfp_out);
-         $display("answer: %128b", answer);
-         error = 1;
-       end
+      $display("[%4d] [%2dth] sfp_out: %h", clk_cnt, i, core_instance.sfp_out);
+      /*out_scan_file = $fscanf(out_file,"%128b", answer); // reading from out file to answer
+      if (sfp_out == answer)
+        $display("%2d-th output featuremap Data matched! :D", i); 
+      else begin
+        $display("%2d-th output featuremap Data ERROR!!", i); 
+        $display("sfpout: %128b", sfp_out);
+        $display("answer: %128b", answer);
+        error = 1;
+      end*/
     end
    
- 
     #0.5 clk = 1'b0; reset = 1;
     #0.5 clk = 1'b1;  
     #0.5 clk = 1'b0; reset = 0; 
     #0.5 clk = 1'b1;  
 
     for (j=0; j<len_kij+1; j=j+1) begin 
-
-      #0.5 clk = 1'b0;   
-        if (j<len_kij) begin CEN_pmem = 0; WEN_pmem = 1; acc_scan_file = $fscanf(acc_file,"%11b", A_pmem); end
-                       else  begin CEN_pmem = 1; WEN_pmem = 1; end
-
-        if (j>0)  acc = 1;  
+      #0.5 clk = 1'b0;
+      if (j<len_kij) begin
+        CEN_pmem = 0;
+        WEN_pmem = 1;
+        acc_scan_file = $fscanf(acc_file,"%11b", A_pmem);
+      end else begin
+        CEN_pmem = 1;
+        WEN_pmem = 1;
+      end
+      if (j>0)  acc = 1;
       #0.5 clk = 1'b1;   
     end
 
-    #0.5 clk = 1'b0; acc = 0;
+    #0.5 clk = 1'b0;
+    acc = 0;
     #0.5 clk = 1'b1; 
-  end*/
-
+  end
 
   if (error == 0) begin
   	$display("############ No error detected ##############"); 
@@ -454,8 +460,7 @@ initial begin
 
   end
 
-  //@FIXME
-  //$fclose(acc_file);
+  $fclose(acc_file);
   //////////////////////////////////
 
   tick_tock(100);

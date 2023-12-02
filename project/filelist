@@ -1,3 +1,4 @@
+./verilog/sfp.v
 ./verilog/mac.v
 ./verilog/mac_row.v
 ./verilog/mac_array.v
