@@ -7,7 +7,7 @@ module core_tb;
 parameter bw = 4;
 parameter psum_bw = 16;
 parameter len_kij = 9;
-parameter len_kij_dim_0 = 3;
+parameter len_kij_dim_1 = 3;
 parameter len_onij = 16;
 parameter len_onij_dim_1 = 4;
 parameter col = 8;
@@ -75,6 +75,9 @@ integer clk_cnt = 0;
 reg [31:0] weight_in [col-1:0];
 reg [31:0] data_in [len_nij-1:0];
 reg [31:0] l0_data_out;
+integer onij_scale, kij_scale;
+integer onij_delta, kij_delta;
+integer acc_addr;
 
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
@@ -400,7 +403,6 @@ initial begin
   tick_tock(20);
 
   ////////// Accumulation /////////
-  acc_file = $fopen("./stimulus_files/acc_addr.txt", "r");
   //out_file = $fopen("out.txt", "r");  
 
   // Following three lines are to remove the first three comment lines of the file
@@ -435,12 +437,21 @@ initial begin
     #0.5 clk = 1'b0; reset = 0; 
     #0.5 clk = 1'b1;  
 
-    for (j=0; j<len_kij+1; j=j+1) begin 
+    onij_scale = i/len_onij_dim_1;
+    onij_delta = i - (onij_scale*len_onij_dim_1);
+    //$display("onij: %d, onij_scale: %d, onij_delta: %d", i, onij_scale, onij_delta);
+    
+    for (j=0; j<len_kij+1; j=j+1) begin
       #0.5 clk = 1'b0;
+      
+      kij_scale = j/len_kij_dim_1;
+      kij_delta = j - (kij_scale*len_kij_dim_1);
+      //$display("kij: %d, kij_scale: %d, kij_delta: %d", j, kij_scale, kij_delta);
+      
       if (j<len_kij) begin
         CEN_pmem = 0;
         WEN_pmem = 1;
-        acc_scan_file = $fscanf(acc_file,"%11b", A_pmem);
+        A_pmem = j*len_nij + (onij_scale*len_nij_dim_1+onij_delta) + (kij_scale*len_nij_dim_1+kij_delta);
       end else begin
         CEN_pmem = 1;
         WEN_pmem = 1;
@@ -460,7 +471,6 @@ initial begin
 
   end
 
-  $fclose(acc_file);
   //////////////////////////////////
 
   tick_tock(100);
