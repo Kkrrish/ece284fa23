@@ -80,9 +80,13 @@ integer onij_delta, kij_delta;
 integer acc_addr;
 integer l0_consec_wr_count = 0;
 integer mac_consec_count = 0;
+
+// Parallelising some stages
 integer t_sram_to_l0 = 0;
 integer t_l0_to_mac = 0;
 wire l0_mac_series = 0;
+integer t_ofifo_to_pmem = 0;
+wire ofifo_pmem_series = 0;
 
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
@@ -180,38 +184,23 @@ task read_ofifo_to_pmem;
   input [10:0] start_addr;
   input integer number_of_cycles;
   begin
-    $display("==== Writing OFIFO data for kij %2d to PMEM ====", kij);
-    for (t=0; t<number_of_cycles+1; t=t+1) begin  
+    $display("[%4d] ==== Writing OFIFO data for kij %2d to PMEM ====", clk_cnt, kij);
+    for (t_ofifo_to_pmem=0; t_ofifo_to_pmem<number_of_cycles+1; t_ofifo_to_pmem=t_ofifo_to_pmem+1) begin  
       #0.5 clk = 1'b0;
-      if(t == 0) begin
+      if(t_ofifo_to_pmem == 0) begin
         ofifo_rd = 1;
         A_pmem = start_addr;
       end else begin
         WEN_pmem = 0;
         CEN_pmem = 0;
       end
-      if(t > 1) A_pmem = A_pmem + 1;
+      if(t_ofifo_to_pmem > 1) A_pmem = A_pmem + 1;
       //$display("[%4d] [%2dth] [SFP to PMEM] %h, Valid: %b", clk_cnt, t, core_instance.pmem_data_in, core_instance.pmem_wr_en);
       #0.5 clk = 1'b1;  
     end
 
     #0.5 clk = 1'b0;  WEN_pmem = 1;  CEN_pmem = 1; ofifo_rd = 0; A_pmem = A_pmem + 1;
     #0.5 clk = 1'b1;
-  end
-endtask
-
-task check_kernel_loading_at_mac;
-  input bool dummy;
-  begin
-    //$display("[%4d] [check_kernel_loading_at_mac] Col %0d Row %0d:  RTL weight %h", clk_cnt, 0, 0, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.b_q);
-    //for (i=0; i<col; i=i+1) begin
-    //  for (j=0; j<row; j=j+1) begin
-        //if(core_instance.corelet_inst.mac_array_inst.mac_row_instance[j].mac_tile_instance[i].mac_instance.b_q != weight[t][bw*(j+1)-1:bw*j]) begin
-        //  $display("[%4d] [check_kernel_loading_at_mac] Col %0d Row %0d:  RTL weight %4b, DV weight %4b", clk_cnt, i, j, weight[t][bw*(j+1)-1:bw*j], core_instance.corelet_inst.mac_array_inst.mac_row_instance[j].mac_tile_instance[i].mac_instance.b_q);
-        //end
-    //    $display("[%4d] [check_kernel_loading_at_mac] Col %0d Row %0d:  RTL weight %h", clk_cnt, i, j, core_instance.corelet_inst.mac_array_inst.row_num[j].mac_row_instance.col_num[i].mac_tile_instance.b_q);
-    //  end
-    //end
   end
 endtask
 
@@ -338,19 +327,6 @@ initial begin
 
   for (kij=0; kij<9; kij=kij+1) begin  // kij loop
 
-    //@FIXME
-    /*case(kij)
-     0: w_file_name = "./stimulus_files/weight_itile0_otile0_kij0.txt";
-     1: w_file_name = "./stimulus_files/weight_itile0_otile0_kij1.txt";
-     2: w_file_name = "./stimulus_files/weight_itile0_otile0_kij2.txt";
-     3: w_file_name = "./stimulus_files/weight_itile0_otile0_kij3.txt";
-     4: w_file_name = "./stimulus_files/weight_itile0_otile0_kij4.txt";
-     5: w_file_name = "./stimulus_files/weight_itile0_otile0_kij5.txt";
-     6: w_file_name = "./stimulus_files/weight_itile0_otile0_kij6.txt";
-     7: w_file_name = "./stimulus_files/weight_itile0_otile0_kij7.txt";
-     8: w_file_name = "./stimulus_files/weight_itile0_otile0_kij8.txt";
-    endcase*/
-
     #0.5 clk = 1'b0;   reset = 1;
     #0.5 clk = 1'b1; 
 
@@ -407,7 +383,6 @@ initial begin
 
     ////// provide some intermission to clear up the kernel loading ///
     tick_tock(col);
-    check_kernel_loading_at_mac(0);
     /////////////////////////////////////
 
     if(l0_mac_series) begin
@@ -428,14 +403,22 @@ initial begin
           tick_tock(1);
           loading_l0_to_mac(len_nij+col-1, 0, 1);
         end
+
+        if(!ofifo_pmem_series) begin
+          wait((&core_instance.corelet_inst.mac_valid));
+          read_ofifo_to_pmem(A_pmem, len_nij);
+        end
       join
     end
-    tick_tock(col);
+    
 
     //////// OFIFO READ ////////
     // Ideally, OFIFO should be read while execution, but we have enough ofifo
     // depth so we can fetch out after execution.
-    read_ofifo_to_pmem(A_pmem, len_nij);
+    if(ofifo_pmem_series) begin
+      tick_tock(col);
+      read_ofifo_to_pmem(A_pmem, len_nij);
+    end
     /////////////////////////////////////
 
 
