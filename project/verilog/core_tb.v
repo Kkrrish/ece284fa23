@@ -106,6 +106,10 @@ integer sram_wr_cycles = 0;
 integer mac_fully_active = 0;
 integer mac_active = 0;
 integer accumulation_time = 0;
+integer ofifo_pop_count = 0;
+integer stat_file;
+integer mac_ld_count = 0;
+integer mac_exec_count = 0;
 
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
@@ -206,7 +210,9 @@ task read_ofifo_to_pmem;
   begin
     $display("[%4d] ==== Writing OFIFO data for kij %2d to PMEM ====", clk_cnt, kij_load);
     for (t_ofifo_to_pmem=0; t_ofifo_to_pmem<number_of_cycles+1; t_ofifo_to_pmem=t_ofifo_to_pmem+1) begin  
+      if(core_instance.corelet_inst.ofifo_valid) begin
       #0.5 clk = 1'b0;
+      ofifo_pop_count = ofifo_pop_count+1;
       if(t_ofifo_to_pmem == 0) begin
         ofifo_rd = 1;
         A_pmem = start_addr;
@@ -216,7 +222,10 @@ task read_ofifo_to_pmem;
       end
       if(t_ofifo_to_pmem > 1) A_pmem = A_pmem + 1;
       //$display("[%4d] [%2dth] [SFP to PMEM] %h, Valid: %b", clk_cnt, t, core_instance.pmem_data_in, core_instance.pmem_wr_en);
-      #0.5 clk = 1'b1;  
+      #0.5 clk = 1'b1;
+      end else begin
+      $display("[%4d] OFIFO to PMEM method active but OFIFO not valid", clk_cnt);
+      end
     end
 
     #0.5 clk = 1'b0;  WEN_pmem = 1;  CEN_pmem = 1; ofifo_rd = 0; A_pmem = A_pmem + 1;
@@ -281,17 +290,22 @@ endtask
 
 // Separate thread to maintain clock count
 initial begin
+  stat_file = $fopen("utilisation.csv", "w");
+  $fdisplay(stat_file, "Time,MAC_Utilisation_Any,MAC_Fully_Active,L0_RD,L0_WR,XMEM_RD, XMEM_WR", "Accumulation", "OFIFO_RD");
   forever begin
     #0.5;
     clk_cnt=clk_cnt+1;
     if(core_instance.corelet_inst.l0_wr) l0_wr_cycles=l0_wr_cycles+1;
     if(core_instance.corelet_inst.l0_rd) l0_rd_cycles=l0_rd_cycles+1;
     if(core_instance.corelet_inst.l0_rd & core_instance.corelet_inst.l0_wr) l0_rd_wr_cycles=l0_rd_wr_cycles+1;
-    if((|core_instance.corelet_inst.mac_valid)) mac_active=mac_active+1;
+    if((|core_instance.corelet_inst.mac_array_inst.inst_w_temp)) mac_active=mac_active+1;
     if((&core_instance.corelet_inst.mac_valid)) mac_fully_active=mac_fully_active+1;
     if(!core_instance.xmem_chip_en & core_instance.xmem_wr_en) sram_rd_cycles=sram_rd_cycles+1;
     if(!core_instance.xmem_chip_en & !core_instance.xmem_wr_en) sram_wr_cycles=sram_wr_cycles+1;
     if(accumulation_wip) accumulation_time=accumulation_time+1;
+    mac_ld_count = core_instance.corelet_inst.mac_array_inst.inst_w_temp[1]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[3]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[5]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[7]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[9]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[11]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[13]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[15];
+    mac_exec_count = core_instance.corelet_inst.mac_array_inst.inst_w_temp[0]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[2]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[4]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[6]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[8]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[10]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[12]+core_instance.corelet_inst.mac_array_inst.inst_w_temp[14];
+    $fdisplay(stat_file, "%4d,%d,%d,%2d,%2d,%2d,%2d,%2d,%2d", clk_cnt, mac_ld_count, mac_exec_count, 1*core_instance.corelet_inst.l0_rd, 1*core_instance.corelet_inst.l0_wr,2*(!core_instance.xmem_chip_en & core_instance.xmem_wr_en),2*(!core_instance.xmem_chip_en & !core_instance.xmem_wr_en), 3*(accumulation_wip), 4*(ofifo_rd));
     #0.5;
   end
 end
@@ -388,7 +402,7 @@ initial begin
     begin
       for (kij_xmem=0; kij_xmem<9; kij_xmem=kij_xmem+1) begin  // kij loop
       
-        wait(!xmem_busy);
+        wait(kij_xmem==kij_load);
         kernel_using_xmem = 1;
         tick_tock(1);   
 
@@ -401,19 +415,18 @@ initial begin
         kernel_using_xmem = 0;
         /////////////////////////////////////
         tick_tock(5);
-        wait(xmem_busy);
+        //wait(xmem_busy);
       end
     end
 
     begin
-      tick_tock(5);
       for (kij_load=0; kij_load<9; kij_load=kij_load+1) begin  // kij loop
-        wait(!kernel_using_xmem);
+        wait(kij_xmem==kij_load+1);
         xmem_busy = 1;
         #0.5 clk = 1'b0;   reset = 1;
         #0.5 clk = 1'b1; 
 
-        tick_tock(5);
+        tick_tock(2);
 
         #0.5 clk = 1'b0;   reset = 0;
         #0.5 clk = 1'b1; 
@@ -441,10 +454,10 @@ initial begin
               loading_l0_to_mac(len_nij-1, 0, 1);
             end
 
-            if(!ofifo_pmem_series) begin
-              wait((&core_instance.corelet_inst.mac_valid));
-              read_ofifo_to_pmem(A_pmem, len_nij);
-            end
+            //if(!ofifo_pmem_series) begin
+            //  wait((&core_instance.corelet_inst.mac_valid));
+            //  read_ofifo_to_pmem(A_pmem, len_nij);
+            //end
           join
         end
 
@@ -473,6 +486,18 @@ initial begin
         /////////////////////////////////////
       end  // end of kij loop
     end
+
+    begin
+      if(!ofifo_pmem_series) begin
+        while(ofifo_pop_count<len_nij*len_kij) begin
+          $display("[%4d] Waiting for OFIFO valid, pop_count: %3d", clk_cnt, ofifo_pop_count);
+          wait((core_instance.corelet_inst.ofifo_valid));
+          read_ofifo_to_pmem(A_pmem, len_nij);
+          tick_tock(1);
+        end
+      end
+    end
+
   join
 
   tick_tock(2);
