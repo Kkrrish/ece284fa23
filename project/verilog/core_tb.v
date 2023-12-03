@@ -95,6 +95,17 @@ integer xmem_busy = 0;
 integer kij_xmem = 0;
 integer kij_load = 0;
 integer kij_execute = 0;
+integer accumulation_wip = 0;
+
+// Statistics
+integer l0_rd_cycles = 0;
+integer l0_wr_cycles = 0;
+integer l0_rd_wr_cycles = 0;
+integer sram_rd_cycles = 0;
+integer sram_wr_cycles = 0;
+integer mac_fully_active = 0;
+integer mac_active = 0;
+integer accumulation_time = 0;
 
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
@@ -178,10 +189,10 @@ task loading_l0_to_mac;
         load = ld_;
         execute = execute_;
       end
-      if(t_l0_to_mac>(number_of_cycles-col)) begin
-        l0_rd = 0;
-        load = 0; execute = 0;
-      end
+      //if(t_l0_to_mac>(number_of_cycles-col)) begin
+      //  l0_rd = 0;
+      //  load = 0; execute = 0;
+      //end
       #0.5 clk = 1'b1;
     end
     #0.5 clk = 1'b0;  l0_rd = 0; load = 0; execute = 0;
@@ -271,7 +282,16 @@ endtask
 // Separate thread to maintain clock count
 initial begin
   forever begin
-    #0.5; clk_cnt=clk_cnt+1;
+    #0.5;
+    clk_cnt=clk_cnt+1;
+    if(core_instance.corelet_inst.l0_wr) l0_wr_cycles=l0_wr_cycles+1;
+    if(core_instance.corelet_inst.l0_rd) l0_rd_cycles=l0_rd_cycles+1;
+    if(core_instance.corelet_inst.l0_rd & core_instance.corelet_inst.l0_wr) l0_rd_wr_cycles=l0_rd_wr_cycles+1;
+    if((|core_instance.corelet_inst.mac_valid)) mac_active=mac_active+1;
+    if((&core_instance.corelet_inst.mac_valid)) mac_fully_active=mac_fully_active+1;
+    if(!core_instance.xmem_chip_en & core_instance.xmem_wr_en) sram_rd_cycles=sram_rd_cycles+1;
+    if(!core_instance.xmem_chip_en & !core_instance.xmem_wr_en) sram_wr_cycles=sram_wr_cycles+1;
+    if(accumulation_wip) accumulation_time=accumulation_time+1;
     #0.5;
   end
 end
@@ -281,7 +301,7 @@ initial begin
     #0.5;
     if(core_instance.corelet_inst.l0_wr) begin
       l0_consec_wr_count=l0_consec_wr_count+1;
-      $display("[%4d] [%3d] L0 Write: %h", clk_cnt, l0_consec_wr_count, core_instance.corelet_inst.l0_data_in);
+      $display("[%4d] [%3d]                                 L0 Write: %h", clk_cnt, l0_consec_wr_count, core_instance.corelet_inst.l0_data_in);
     end else begin
       if(l0_consec_wr_count != 0) l0_consec_wr_count=0;
     end
@@ -410,11 +430,20 @@ initial begin
           fork
             begin
               kernel_loading_sram_to_l0(11'b10000000000, col, 1);
+              kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
+              xmem_busy = 0;
             end
 
             begin
               tick_tock(1);
-              loading_l0_to_mac(2*col-1, 1, 0);
+              loading_l0_to_mac(col-1, 1, 0);
+              tick_tock(1);
+              loading_l0_to_mac(len_nij-1, 0, 1);
+            end
+
+            if(!ofifo_pmem_series) begin
+              wait((&core_instance.corelet_inst.mac_valid));
+              read_ofifo_to_pmem(A_pmem, len_nij);
             end
           join
         end
@@ -432,27 +461,8 @@ initial begin
           loading_l0_to_mac(len_nij+col-1, 0, 1);
           /////////////////////////////////////
           xmem_busy = 0;
-        end else begin
-          fork
-            begin
-              kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
-              xmem_busy = 0;
-            end
-
-            begin
-              tick_tock(1);
-              loading_l0_to_mac(len_nij+col-1, 0, 1);
-              
-            end
-
-            if(!ofifo_pmem_series) begin
-              wait((&core_instance.corelet_inst.mac_valid));
-              read_ofifo_to_pmem(A_pmem, len_nij);
-            end
-          join
         end
         
-
         //////// OFIFO READ ////////
         // Ideally, OFIFO should be read while execution, but we have enough ofifo
         // depth so we can fetch out after execution.
@@ -478,7 +488,7 @@ initial begin
   error = 0;
 
   $display("############ Verification Start during accumulation #############"); 
-  
+  accumulation_wip = 1;
   for (i=0; i<len_onij+1; i=i+1) begin 
 
     #0.5 clk = 1'b0; 
@@ -537,10 +547,22 @@ initial begin
   	$display("########### Project Completed !! ############"); 
 
   end
-
+  accumulation_wip = 0;
   //////////////////////////////////
 
   //tick_tock(5);
+  $display("\n");
+  $display("======= Systolic Array Statistics =======");
+  $display("SRAM Read   : %2d percent", (sram_rd_cycles*100)/clk_cnt);
+  $display("SRAM Write  : %2d percent", (sram_wr_cycles*100)/clk_cnt);
+  $display("L0 Read     : %2d percent", (l0_rd_cycles*100)/clk_cnt);
+  $display("L0 Write    : %2d percent", (l0_wr_cycles*100)/clk_cnt);
+  $display("L0 Rd/Wr    : %2d percent", (l0_rd_wr_cycles*100)/clk_cnt);
+  $display("MAC Active        : %2d percent", (mac_active*100)/clk_cnt);
+  $display("MAC Fully Active  : %2d percent", (mac_fully_active*100)/clk_cnt);
+  $display("Accumulation      : %2d percent", (accumulation_time*100)/clk_cnt);
+  $display("=========================================");
+  $display("\n");
   $display("[%4d] Last cycle", clk_cnt);
   $finish;
 
