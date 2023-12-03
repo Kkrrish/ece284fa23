@@ -78,6 +78,8 @@ reg [31:0] l0_data_out;
 integer onij_scale, kij_scale;
 integer onij_delta, kij_delta;
 integer acc_addr;
+integer l0_consec_wr_count = 0;
+integer mac_consec_count = 0;
 
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
@@ -118,7 +120,7 @@ task kernel_loading_sram_to_l0;
   input integer count;
   input data_is_weights;
   begin  
-    #0.5 clk = 1'b0;
+    /*#0.5 clk = 1'b0;
     A_xmem = start_addr;
     WEN_xmem = 1;
     CEN_xmem = 0;
@@ -126,11 +128,20 @@ task kernel_loading_sram_to_l0;
     l0_rd = 0;
     #0.5 clk = 1'b1;
     #0.5 clk = 1'b0; A_xmem = A_xmem + 1;
-    #0.5 clk = 1'b1;
-    for (t=0; t<count; t=t+1) begin  
+    #0.5 clk = 1'b1;*/
+    for (t=0; t<count+1; t=t+1) begin  
       #0.5 clk = 1'b0;
-      A_xmem = A_xmem + 1;
-      if(data_is_weights == 1) begin
+      //A_xmem = A_xmem + 1;
+      if(t == 0) begin
+        A_xmem = start_addr;
+        WEN_xmem = 1;
+        CEN_xmem = 0;
+      end else begin
+        A_xmem = A_xmem + 1;
+        l0_wr = 1;
+        l0_rd = 0;
+      end
+      /*if(data_is_weights == 1) begin
         if(weight_in[t][31:0] == core_instance.xmem_inst.Q) begin
           $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data matched", clk_cnt, t, core_instance.xmem_inst.Q);
         end else begin
@@ -142,7 +153,7 @@ task kernel_loading_sram_to_l0;
         end else begin
         $display("[%4d] %2d-th data from XMEM to L0 is %h --- Data ERROR !!!", clk_cnt, t, core_instance.xmem_inst.Q);
         end
-      end 
+      end*/
       #0.5 clk = 1'b1;  
     end
     #0.5 clk = 1'b0;  WEN_xmem = 1;  CEN_xmem = 1; l0_wr = 0;
@@ -155,21 +166,27 @@ task loading_l0_to_mac;
   input ld_;
   input execute_;
   begin  
-    #0.5 clk = 1'b0;
+    /*#0.5 clk = 1'b0;
     l0_rd = 1;  // Read out from L0
     #0.5 clk = 1'b1;
     #0.5 clk = 1'b0;
     load = ld_;   // Load into MAC
     execute = execute_;
     #0.5 clk = 1'b1;
-    tick_tock(1);
-    for (t=0; t<number_of_cycles; t=t+1) begin
+    tick_tock(1);*/
+    for (t=0; t<number_of_cycles+1; t=t+1) begin
       #0.5 clk = 1'b0;
-      if(t>(number_of_cycles-col-2)) begin
+      if(t == 0) begin
+        l0_rd = 1;  // Read out from L0
+      //end else begin
+        load = ld_;
+        execute = execute_;
+      end
+      if(t>(number_of_cycles-col)) begin
         load = 0; execute = 0;
       end
       l0_data_out = core_instance.corelet_inst.l0_data_out;
-      $display("[%4d] [%2dth] [L0 to MAC]   %h", clk_cnt, t, core_instance.corelet_inst.l0_data_out);
+      //$display("[%4d] [%2dth] [L0 to MAC]   %h", clk_cnt, t, core_instance.corelet_inst.l0_data_out);
       //$display("[%4d]                               OUT_S: %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.out_s);
       //$display("[%4d]                               IN_N : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.in_n);
       //$display("[%4d]                               A_Q : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.a_q);
@@ -231,6 +248,32 @@ initial begin
   end
 end
 
+initial begin
+  forever begin
+    #0.5;
+    if(core_instance.corelet_inst.l0_wr) begin
+      l0_consec_wr_count=l0_consec_wr_count+1;
+      $display("[%4d] [%3d] L0 Write: %h", clk_cnt, l0_consec_wr_count, core_instance.corelet_inst.l0_data_in);
+    end else begin
+      if(l0_consec_wr_count != 0) l0_consec_wr_count=0;
+    end
+    #0.5;
+  end
+end
+
+initial begin
+  forever begin
+    #0.5;
+    if((|core_instance.corelet_inst.mac_array_inst.inst_w_temp) == 1) begin
+      mac_consec_count=mac_consec_count+1;
+      $display("[%4d] [%3d] MAC inst: %2b, data: %h", clk_cnt, mac_consec_count, core_instance.corelet_inst.mac_array_inst.inst_w_temp, core_instance.corelet_inst.mac_array_inst.in_w);
+    end else begin
+      if(mac_consec_count != 0) mac_consec_count=0;
+    end
+    #0.5;
+  end
+end
+
 // Temporary Thread to monitor outputs from MAC Array
 initial begin
   forever begin
@@ -268,7 +311,7 @@ initial begin
   $dumpvars(0,core_tb);
 
   //@FIXME
-  x_file = $fopen("./stimulus_files/activation_tile0.txt", "r");
+  x_file = $fopen("./stimulus_files/activation.txt", "r");
   // Following three lines are to remove the first three comment lines of the file
   x_scan_file = $fscanf(x_file,"%s", captured_data);
   x_scan_file = $fscanf(x_file,"%s", captured_data);
@@ -309,11 +352,19 @@ initial begin
   $fclose(x_file);
   /////////////////////////////////////////////////
 
+  //@FIXME
+  w_file_name = "./stimulus_files/weight.txt";  
+
+  w_file = $fopen(w_file_name, "r");
+  // Following three lines are to remove the first three comment lines of the file
+  w_scan_file = $fscanf(w_file,"%s", captured_data);
+  w_scan_file = $fscanf(w_file,"%s", captured_data);
+  w_scan_file = $fscanf(w_file,"%s", captured_data);
 
   for (kij=0; kij<9; kij=kij+1) begin  // kij loop
 
     //@FIXME
-    case(kij)
+    /*case(kij)
      0: w_file_name = "./stimulus_files/weight_itile0_otile0_kij0.txt";
      1: w_file_name = "./stimulus_files/weight_itile0_otile0_kij1.txt";
      2: w_file_name = "./stimulus_files/weight_itile0_otile0_kij2.txt";
@@ -323,17 +374,7 @@ initial begin
      6: w_file_name = "./stimulus_files/weight_itile0_otile0_kij6.txt";
      7: w_file_name = "./stimulus_files/weight_itile0_otile0_kij7.txt";
      8: w_file_name = "./stimulus_files/weight_itile0_otile0_kij8.txt";
-    endcase
-
-    //@FIXME
-    w_file_name = "./stimulus_files/weight.txt";
-    
-
-    w_file = $fopen(w_file_name, "r");
-    // Following three lines are to remove the first three comment lines of the file
-    w_scan_file = $fscanf(w_file,"%s", captured_data);
-    w_scan_file = $fscanf(w_file,"%s", captured_data);
-    w_scan_file = $fscanf(w_file,"%s", captured_data);
+    endcase*/
 
     #0.5 clk = 1'b0;   reset = 1;
     #0.5 clk = 1'b1; 
@@ -403,12 +444,12 @@ initial begin
   tick_tock(20);
 
   ////////// Accumulation /////////
-  //out_file = $fopen("out.txt", "r");  
+  out_file = $fopen("./stimulus_files/psum.txt", "r");  
 
   // Following three lines are to remove the first three comment lines of the file
-  //out_scan_file = $fscanf(out_file,"%s", answer); 
-  //out_scan_file = $fscanf(out_file,"%s", answer); 
-  //out_scan_file = $fscanf(out_file,"%s", answer); 
+  out_scan_file = $fscanf(out_file,"%s", answer); 
+  out_scan_file = $fscanf(out_file,"%s", answer); 
+  out_scan_file = $fscanf(out_file,"%s", answer); 
 
   error = 0;
 
@@ -421,15 +462,15 @@ initial begin
 
     if (i>0) begin
       $display("[%4d] [%2dth] sfp_out: %h", clk_cnt, i, core_instance.sfp_out);
-      /*out_scan_file = $fscanf(out_file,"%128b", answer); // reading from out file to answer
+      out_scan_file = $fscanf(out_file,"%128b", answer); // reading from out file to answer
       if (sfp_out == answer)
         $display("%2d-th output featuremap Data matched! :D", i); 
       else begin
         $display("%2d-th output featuremap Data ERROR!!", i); 
-        $display("sfpout: %128b", sfp_out);
-        $display("answer: %128b", answer);
+        $display("sfpout: %h", sfp_out);
+        $display("answer: %h", answer);
         error = 1;
-      end*/
+      end
     end
    
     #0.5 clk = 1'b0; reset = 1;
