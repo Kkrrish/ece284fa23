@@ -87,6 +87,14 @@ integer t_l0_to_mac = 0;
 wire l0_mac_series = 0;
 integer t_ofifo_to_pmem = 0;
 wire ofifo_pmem_series = 0;
+integer kernel_using_xmem = 1;
+integer activation_using_xmem = 0;
+integer kernel_sram_l0 = 0;
+integer activation_sram_l0 = 0;
+integer xmem_busy = 0;
+integer kij_xmem = 0;
+integer kij_load = 0;
+integer kij_execute = 0;
 
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
@@ -171,6 +179,7 @@ task loading_l0_to_mac;
         execute = execute_;
       end
       if(t_l0_to_mac>(number_of_cycles-col)) begin
+        l0_rd = 0;
         load = 0; execute = 0;
       end
       #0.5 clk = 1'b1;
@@ -184,7 +193,7 @@ task read_ofifo_to_pmem;
   input [10:0] start_addr;
   input integer number_of_cycles;
   begin
-    $display("[%4d] ==== Writing OFIFO data for kij %2d to PMEM ====", clk_cnt, kij);
+    $display("[%4d] ==== Writing OFIFO data for kij %2d to PMEM ====", clk_cnt, kij_load);
     for (t_ofifo_to_pmem=0; t_ofifo_to_pmem<number_of_cycles+1; t_ofifo_to_pmem=t_ofifo_to_pmem+1) begin  
       #0.5 clk = 1'b0;
       if(t_ofifo_to_pmem == 0) begin
@@ -200,6 +209,61 @@ task read_ofifo_to_pmem;
     end
 
     #0.5 clk = 1'b0;  WEN_pmem = 1;  CEN_pmem = 1; ofifo_rd = 0; A_pmem = A_pmem + 1;
+    #0.5 clk = 1'b1;
+  end
+endtask
+
+task write_activation_xmem;
+  input integer count;
+  begin
+  x_file = $fopen("./stimulus_files/activation.txt", "r");
+  // Following three lines are to remove the first three comment lines of the file
+  x_scan_file = $fscanf(x_file,"%s", captured_data);
+  x_scan_file = $fscanf(x_file,"%s", captured_data);
+  x_scan_file = $fscanf(x_file,"%s", captured_data);
+
+  /////// Activation data writing to memory ///////
+  $display("==== Writing activation data to XMEM ====");
+  for (t=0; t<count; t=t+1) begin  
+    #0.5 clk = 1'b0;
+    x_scan_file = $fscanf(x_file,"%32b", D_xmem);
+    WEN_xmem = 0;
+    CEN_xmem = 0;
+    if (t>0) A_xmem = A_xmem + 1;
+    
+    data_in[t][31:0] = D_xmem;
+    if(verbose) $display("[%4d] %2d-th data from TB to XMEM is %h", clk_cnt, t, D_xmem);
+
+    #0.5 clk = 1'b1;   
+  end
+
+  #0.5 clk = 1'b0;  WEN_xmem = 1;  CEN_xmem = 1; A_xmem = 0;
+  #0.5 clk = 1'b1; 
+
+  $fclose(x_file);
+  /////////////////////////////////////////////////
+  end
+endtask
+
+task write_kernel_xmem;
+  input [31:0] start_addr;
+  input integer count;
+  begin
+    A_xmem = start_addr;
+    for (t=0; t<count; t=t+1) begin  
+      #0.5 clk = 1'b0;
+      w_scan_file = $fscanf(w_file,"%32b", D_xmem);
+      WEN_xmem = 0;
+      CEN_xmem = 0;
+      if (t>0) A_xmem = A_xmem + 1;
+
+      weight_in[t][31:0] = D_xmem;
+      if(verbose) $display("[%4d] %2d-th data from TB to XMEM is %h", clk_cnt, t, D_xmem);
+      
+      #0.5 clk = 1'b1;  
+    end
+
+    #0.5 clk = 1'b0;  WEN_xmem = 1;  CEN_xmem = 1; A_xmem = 0;
     #0.5 clk = 1'b1;
   end
 endtask
@@ -274,13 +338,7 @@ initial begin
   $dumpfile("core_tb.vcd");
   $dumpvars(0,core_tb);
 
-  //@FIXME
-  x_file = $fopen("./stimulus_files/activation.txt", "r");
-  // Following three lines are to remove the first three comment lines of the file
-  x_scan_file = $fscanf(x_file,"%s", captured_data);
-  x_scan_file = $fscanf(x_file,"%s", captured_data);
-  x_scan_file = $fscanf(x_file,"%s", captured_data);
-
+  activation_using_xmem = 1;
   //////// Reset /////////
   #0.5 clk = 1'b0;   reset = 1;
   #0.5 clk = 1'b1; 
@@ -294,29 +352,10 @@ initial begin
   #0.5 clk = 1'b1;   
   /////////////////////////
 
-  //@FIXME
-  /////// Activation data writing to memory ///////
-  $display("==== Writing activation data to XMEM ====");
-  for (t=0; t<len_nij; t=t+1) begin  
-    #0.5 clk = 1'b0;
-    x_scan_file = $fscanf(x_file,"%32b", D_xmem);
-    WEN_xmem = 0;
-    CEN_xmem = 0;
-    if (t>0) A_xmem = A_xmem + 1;
-    
-    data_in[t][31:0] = D_xmem;
-    if(verbose) $display("[%4d] %2d-th data from TB to XMEM is %h", clk_cnt, t, D_xmem);
-
-    #0.5 clk = 1'b1;   
-  end
-
-  #0.5 clk = 1'b0;  WEN_xmem = 1;  CEN_xmem = 1; A_xmem = 0;
-  #0.5 clk = 1'b1; 
-
-  $fclose(x_file);
-  /////////////////////////////////////////////////
-
-  //@FIXME
+  
+  write_activation_xmem(len_nij);
+  activation_using_xmem = 0;
+  
   w_file_name = "./stimulus_files/weight.txt";  
 
   w_file = $fopen(w_file_name, "r");
@@ -325,106 +364,108 @@ initial begin
   w_scan_file = $fscanf(w_file,"%s", captured_data);
   w_scan_file = $fscanf(w_file,"%s", captured_data);
 
-  for (kij=0; kij<9; kij=kij+1) begin  // kij loop
-
-    #0.5 clk = 1'b0;   reset = 1;
-    #0.5 clk = 1'b1; 
-
-    tick_tock(5);
-
-    #0.5 clk = 1'b0;   reset = 0;
-    #0.5 clk = 1'b1; 
-    
-    tick_tock(1);  
-
-    /////// Kernel data writing to memory ///////
-    $display("==== Writing kernel data for kij %2d to XMEM ====", kij);
-    A_xmem = 11'b10000000000;
-
-    for (t=0; t<col; t=t+1) begin  
-      #0.5 clk = 1'b0;
-      w_scan_file = $fscanf(w_file,"%32b", D_xmem);
-      WEN_xmem = 0;
-      CEN_xmem = 0;
-      if (t>0) A_xmem = A_xmem + 1;
-
-      weight_in[t][31:0] = D_xmem;
-      if(verbose) $display("[%4d] %2d-th data from TB to XMEM is %h", clk_cnt, t, D_xmem);
+  fork
+    begin
+      for (kij_xmem=0; kij_xmem<9; kij_xmem=kij_xmem+1) begin  // kij loop
       
-      #0.5 clk = 1'b1;  
+        wait(!xmem_busy);
+        kernel_using_xmem = 1;
+        tick_tock(1);   
+
+        /////// Kernel data writing to memory ///////
+        $display("==== Writing kernel data for kij %2d to XMEM ====", kij_xmem);
+        A_xmem = 11'b10000000000;
+
+        write_kernel_xmem(A_xmem, col);
+        tick_tock(1);
+        kernel_using_xmem = 0;
+        /////////////////////////////////////
+        tick_tock(5);
+        wait(xmem_busy);
+      end
     end
 
-    #0.5 clk = 1'b0;  WEN_xmem = 1;  CEN_xmem = 1; A_xmem = 0;
-    #0.5 clk = 1'b1; 
-    /////////////////////////////////////
+    begin
+      tick_tock(5);
+      for (kij_load=0; kij_load<9; kij_load=kij_load+1) begin  // kij loop
+        wait(!kernel_using_xmem);
+        xmem_busy = 1;
+        #0.5 clk = 1'b0;   reset = 1;
+        #0.5 clk = 1'b1; 
 
-    tick_tock(5);
+        tick_tock(5);
 
-    if(l0_mac_series) begin
-      /////// Kernel data writing to L0 ///////
-      kernel_loading_sram_to_l0(11'b10000000000, col, 1);
-      /////////////////////////////////////
+        #0.5 clk = 1'b0;   reset = 0;
+        #0.5 clk = 1'b1; 
 
-      /////// Kernel loading to PEs ///////
-      loading_l0_to_mac(2*col-1, 1, 0);
-      /////////////////////////////////////
-    end else begin
-      fork
-        begin
+        if(l0_mac_series) begin
+          /////// Kernel data writing to L0 ///////
           kernel_loading_sram_to_l0(11'b10000000000, col, 1);
-        end
+          /////////////////////////////////////
 
-        begin
-          tick_tock(1);
+          /////// Kernel loading to PEs ///////
           loading_l0_to_mac(2*col-1, 1, 0);
+          /////////////////////////////////////
+        end else begin
+          fork
+            begin
+              kernel_loading_sram_to_l0(11'b10000000000, col, 1);
+            end
+
+            begin
+              tick_tock(1);
+              loading_l0_to_mac(2*col-1, 1, 0);
+            end
+          join
         end
-      join
-    end
 
-    ////// provide some intermission to clear up the kernel loading ///
-    tick_tock(col);
-    /////////////////////////////////////
-
-    if(l0_mac_series) begin
-      /////// Activation data writing to L0 ///////
-      kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
-      /////////////////////////////////////
-
-      /////// Execution ///////
-      loading_l0_to_mac(len_nij+col-1, 0, 1);
-      /////////////////////////////////////
-    end else begin
-      fork
-        begin
+        if(l0_mac_series) begin
+          ////// provide some intermission to clear up the kernel loading ///
+          tick_tock(col);
+          /////////////////////////////////////
+          
+          /////// Activation data writing to L0 ///////
           kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
-        end
+          /////////////////////////////////////
 
-        begin
-          tick_tock(1);
+          /////// Execution ///////
           loading_l0_to_mac(len_nij+col-1, 0, 1);
-        end
+          /////////////////////////////////////
+          xmem_busy = 0;
+        end else begin
+          fork
+            begin
+              kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
+              xmem_busy = 0;
+            end
 
-        if(!ofifo_pmem_series) begin
-          wait((&core_instance.corelet_inst.mac_valid));
+            begin
+              tick_tock(1);
+              loading_l0_to_mac(len_nij+col-1, 0, 1);
+              
+            end
+
+            if(!ofifo_pmem_series) begin
+              wait((&core_instance.corelet_inst.mac_valid));
+              read_ofifo_to_pmem(A_pmem, len_nij);
+            end
+          join
+        end
+        
+
+        //////// OFIFO READ ////////
+        // Ideally, OFIFO should be read while execution, but we have enough ofifo
+        // depth so we can fetch out after execution.
+        if(ofifo_pmem_series) begin
+          tick_tock(col);
           read_ofifo_to_pmem(A_pmem, len_nij);
         end
-      join
+        /////////////////////////////////////
+      end  // end of kij loop
     end
-    
+  join
 
-    //////// OFIFO READ ////////
-    // Ideally, OFIFO should be read while execution, but we have enough ofifo
-    // depth so we can fetch out after execution.
-    if(ofifo_pmem_series) begin
-      tick_tock(col);
-      read_ofifo_to_pmem(A_pmem, len_nij);
-    end
-    /////////////////////////////////////
-
-
-  end  // end of kij loop
-
-  tick_tock(20);
+  tick_tock(2);
 
   ////////// Accumulation /////////
   out_file = $fopen("./stimulus_files/psum.txt", "r");  
@@ -455,38 +496,40 @@ initial begin
         error = 1;
       end
     end
-   
-    #0.5 clk = 1'b0; reset = 1;
-    #0.5 clk = 1'b1;  
-    #0.5 clk = 1'b0; reset = 0; 
-    #0.5 clk = 1'b1;  
 
-    onij_scale = i/len_onij_dim_1;
-    onij_delta = i - (onij_scale*len_onij_dim_1);
-    //$display("onij: %d, onij_scale: %d, onij_delta: %d", i, onij_scale, onij_delta);
-    
-    for (j=0; j<len_kij+1; j=j+1) begin
-      #0.5 clk = 1'b0;
+    if(i < len_onij) begin 
+      #0.5 clk = 1'b0; reset = 1;
+      #0.5 clk = 1'b1;  
+      #0.5 clk = 1'b0; reset = 0; 
+      #0.5 clk = 1'b1;  
+
+      onij_scale = i/len_onij_dim_1;
+      onij_delta = i - (onij_scale*len_onij_dim_1);
+      //$display("onij: %d, onij_scale: %d, onij_delta: %d", i, onij_scale, onij_delta);
       
-      kij_scale = j/len_kij_dim_1;
-      kij_delta = j - (kij_scale*len_kij_dim_1);
-      //$display("kij: %d, kij_scale: %d, kij_delta: %d", j, kij_scale, kij_delta);
-      
-      if (j<len_kij) begin
-        CEN_pmem = 0;
-        WEN_pmem = 1;
-        A_pmem = j*len_nij + (onij_scale*len_nij_dim_1+onij_delta) + (kij_scale*len_nij_dim_1+kij_delta);
-      end else begin
-        CEN_pmem = 1;
-        WEN_pmem = 1;
+      for (j=0; j<len_kij+1; j=j+1) begin
+        #0.5 clk = 1'b0;
+        
+        kij_scale = j/len_kij_dim_1;
+        kij_delta = j - (kij_scale*len_kij_dim_1);
+        //$display("kij: %d, kij_scale: %d, kij_delta: %d", j, kij_scale, kij_delta);
+        
+        if (j<len_kij) begin
+          CEN_pmem = 0;
+          WEN_pmem = 1;
+          A_pmem = j*len_nij + (onij_scale*len_nij_dim_1+onij_delta) + (kij_scale*len_nij_dim_1+kij_delta);
+        end else begin
+          CEN_pmem = 1;
+          WEN_pmem = 1;
+        end
+        if (j>0)  acc = 1;
+        #0.5 clk = 1'b1;   
       end
-      if (j>0)  acc = 1;
-      #0.5 clk = 1'b1;   
-    end
 
-    #0.5 clk = 1'b0;
-    acc = 0;
-    #0.5 clk = 1'b1; 
+      #0.5 clk = 1'b0;
+      acc = 0;
+      #0.5 clk = 1'b1;
+    end
   end
 
   if (error == 0) begin
