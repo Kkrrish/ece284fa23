@@ -80,6 +80,9 @@ integer onij_delta, kij_delta;
 integer acc_addr;
 integer l0_consec_wr_count = 0;
 integer mac_consec_count = 0;
+integer t_sram_to_l0 = 0;
+integer t_l0_to_mac = 0;
+wire l0_mac_series = 0;
 
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
@@ -120,26 +123,16 @@ task kernel_loading_sram_to_l0;
   input integer count;
   input data_is_weights;
   begin  
-    /*#0.5 clk = 1'b0;
-    A_xmem = start_addr;
-    WEN_xmem = 1;
-    CEN_xmem = 0;
-    l0_wr = 1;
-    l0_rd = 0;
-    #0.5 clk = 1'b1;
-    #0.5 clk = 1'b0; A_xmem = A_xmem + 1;
-    #0.5 clk = 1'b1;*/
-    for (t=0; t<count+1; t=t+1) begin  
+    for (t_sram_to_l0=0; t_sram_to_l0<count+1; t_sram_to_l0=t_sram_to_l0+1) begin  
       #0.5 clk = 1'b0;
-      //A_xmem = A_xmem + 1;
-      if(t == 0) begin
+      if(t_sram_to_l0 == 0) begin
         A_xmem = start_addr;
         WEN_xmem = 1;
         CEN_xmem = 0;
       end else begin
         A_xmem = A_xmem + 1;
         l0_wr = 1;
-        l0_rd = 0;
+        //l0_rd = 0;
       end
       /*if(data_is_weights == 1) begin
         if(weight_in[t][31:0] == core_instance.xmem_inst.Q) begin
@@ -166,33 +159,16 @@ task loading_l0_to_mac;
   input ld_;
   input execute_;
   begin  
-    /*#0.5 clk = 1'b0;
-    l0_rd = 1;  // Read out from L0
-    #0.5 clk = 1'b1;
-    #0.5 clk = 1'b0;
-    load = ld_;   // Load into MAC
-    execute = execute_;
-    #0.5 clk = 1'b1;
-    tick_tock(1);*/
-    for (t=0; t<number_of_cycles+1; t=t+1) begin
+    for (t_l0_to_mac=0; t_l0_to_mac<number_of_cycles+1; t_l0_to_mac=t_l0_to_mac+1) begin
       #0.5 clk = 1'b0;
-      if(t == 0) begin
-        l0_rd = 1;  // Read out from L0
-      //end else begin
+      if(t_l0_to_mac == 0) begin
+        l0_rd = 1;
         load = ld_;
         execute = execute_;
       end
-      if(t>(number_of_cycles-col)) begin
+      if(t_l0_to_mac>(number_of_cycles-col)) begin
         load = 0; execute = 0;
       end
-      l0_data_out = core_instance.corelet_inst.l0_data_out;
-      //$display("[%4d] [%2dth] [L0 to MAC]   %h", clk_cnt, t, core_instance.corelet_inst.l0_data_out);
-      //$display("[%4d]                               OUT_S: %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.out_s);
-      //$display("[%4d]                               IN_N : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.in_n);
-      //$display("[%4d]                               A_Q : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.a_q);
-      //$display("[%4d]                               B_Q : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.b_q);
-      //$display("[%4d]                               C_Q : %h", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[1].mac_row_instance.col_num[1].mac_tile_instance.c_q);
-      //$display("[%4d] MAC inst %h, input %h, load_ready_q %b, weight %b", clk_cnt, core_instance.corelet_inst.mac_array_inst.row_num[8].mac_row_instance.col_num[8].mac_tile_instance.inst_w, core_instance.corelet_inst.mac_array_inst.row_num[8].mac_row_instance.col_num[8].mac_tile_instance.in_w, core_instance.corelet_inst.mac_array_inst.row_num[8].mac_row_instance.col_num[8].mac_tile_instance.load_ready_q, core_instance.corelet_inst.mac_array_inst.row_num[8].mac_row_instance.col_num[8].mac_tile_instance.b_q );
       #0.5 clk = 1'b1;
     end
     #0.5 clk = 1'b0;  l0_rd = 0; load = 0; execute = 0;
@@ -205,22 +181,21 @@ task read_ofifo_to_pmem;
   input integer number_of_cycles;
   begin
     $display("==== Writing OFIFO data for kij %2d to PMEM ====", kij);
-    #0.5 clk = 1'b0;
-    ofifo_rd = 1;
-    A_pmem = start_addr;
-    #0.5 clk = 1'b1;
-    #0.5 clk = 1'b0;
-    WEN_pmem = 0;
-    CEN_pmem = 0; 
-    #0.5 clk = 1'b1;
-    for (t=0; t<number_of_cycles; t=t+1) begin  
+    for (t=0; t<number_of_cycles+1; t=t+1) begin  
       #0.5 clk = 1'b0;
-      A_pmem = A_pmem + 1;
+      if(t == 0) begin
+        ofifo_rd = 1;
+        A_pmem = start_addr;
+      end else begin
+        WEN_pmem = 0;
+        CEN_pmem = 0;
+      end
+      if(t > 1) A_pmem = A_pmem + 1;
       //$display("[%4d] [%2dth] [SFP to PMEM] %h, Valid: %b", clk_cnt, t, core_instance.pmem_data_in, core_instance.pmem_wr_en);
       #0.5 clk = 1'b1;  
     end
 
-    #0.5 clk = 1'b0;  WEN_pmem = 1;  CEN_pmem = 1; ofifo_rd = 0;
+    #0.5 clk = 1'b0;  WEN_pmem = 1;  CEN_pmem = 1; ofifo_rd = 0; A_pmem = A_pmem + 1;
     #0.5 clk = 1'b1;
   end
 endtask
@@ -409,27 +384,52 @@ initial begin
 
     tick_tock(5);
 
-    /////// Kernel data writing to L0 ///////
-    kernel_loading_sram_to_l0(11'b10000000000, col, 1);
-    /////////////////////////////////////
+    if(l0_mac_series) begin
+      /////// Kernel data writing to L0 ///////
+      kernel_loading_sram_to_l0(11'b10000000000, col, 1);
+      /////////////////////////////////////
 
-    /////// Kernel loading to PEs ///////
-    loading_l0_to_mac(2*col-1, 1, 0);
-    /////////////////////////////////////
+      /////// Kernel loading to PEs ///////
+      loading_l0_to_mac(2*col-1, 1, 0);
+      /////////////////////////////////////
+    end else begin
+      fork
+        begin
+          kernel_loading_sram_to_l0(11'b10000000000, col, 1);
+        end
+
+        begin
+          tick_tock(1);
+          loading_l0_to_mac(2*col-1, 1, 0);
+        end
+      join
+    end
 
     ////// provide some intermission to clear up the kernel loading ///
     tick_tock(col);
     check_kernel_loading_at_mac(0);
     /////////////////////////////////////
 
-    /////// Activation data writing to L0 ///////
-    kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
-    /////////////////////////////////////
+    if(l0_mac_series) begin
+      /////// Activation data writing to L0 ///////
+      kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
+      /////////////////////////////////////
 
-    /////// Execution ///////
-    loading_l0_to_mac(len_nij+col-1, 0, 1);
-    /////////////////////////////////////
+      /////// Execution ///////
+      loading_l0_to_mac(len_nij+col-1, 0, 1);
+      /////////////////////////////////////
+    end else begin
+      fork
+        begin
+          kernel_loading_sram_to_l0(11'b00000000000, len_nij, 0);
+        end
 
+        begin
+          tick_tock(1);
+          loading_l0_to_mac(len_nij+col-1, 0, 1);
+        end
+      join
+    end
     tick_tock(col);
 
     //////// OFIFO READ ////////
@@ -514,7 +514,7 @@ initial begin
 
   //////////////////////////////////
 
-  tick_tock(100);
+  //tick_tock(5);
   $display("[%4d] Last cycle", clk_cnt);
   $finish;
 
