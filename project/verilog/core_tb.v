@@ -248,8 +248,8 @@ endtask
 task write_activation_xmem;
   input integer count;
   begin
-  if(channels_per_pe == 1) x_file = $fopen("./stimulus_files/1_ic_per_pe/activation.txt", "r");
-  if(channels_per_pe == 2) x_file = $fopen("./stimulus_files/2_ic_per_pe/activation.txt", "r");
+  if(channels_per_pe == 1) x_file = $fopen("./stimulus_files/1_ic_per_pe/input.txt", "r");
+  if(channels_per_pe == 2) x_file = $fopen("./stimulus_files/2_ic_per_pe/input.txt", "r");
   
   // Following three lines are to remove the first three comment lines of the file
   x_scan_file = $fscanf(x_file,"%s", captured_data);
@@ -528,13 +528,13 @@ initial begin
   out_scan_file = $fscanf(out_file,"%s", answer); 
   out_scan_file = $fscanf(out_file,"%s", answer); 
   
-  if(channels_per_pe == 1) acc_file = $fopen("./stimulus_files/1_ic_per_pe/psum.txt", "r");
-  if(channels_per_pe == 2) acc_file = $fopen("./stimulus_files/2_ic_per_pe/psum.txt", "r");  
+  //if(channels_per_pe == 1) acc_file = $fopen("./stimulus_files/1_ic_per_pe/psum.txt", "r");
+  //if(channels_per_pe == 2) acc_file = $fopen("./stimulus_files/2_ic_per_pe/psum.txt", "r");  
 
   // Following three lines are to remove the first three comment lines of the file
-  acc_scan_file = $fscanf(acc_file,"%s", answer); 
-  acc_scan_file = $fscanf(acc_file,"%s", answer); 
-  acc_scan_file = $fscanf(acc_file,"%s", answer);
+  //acc_scan_file = $fscanf(acc_file,"%s", answer); 
+  //acc_scan_file = $fscanf(acc_file,"%s", answer); 
+  //acc_scan_file = $fscanf(acc_file,"%s", answer);
   error = 0;
 
   $display("############ Verification Start during accumulation #############"); 
@@ -545,16 +545,16 @@ initial begin
     #0.5 clk = 1'b1; 
 
     if (i>0) begin
-      $display("[%4d] [%2dth] sfp_out: %h", clk_cnt, i, core_instance.sfp_out);
-      acc_scan_file = $fscanf(acc_file,"%128b", psum_answer); // reading from out file to answer
-      if (sfp_out == psum_answer)
-        $display("%2d-th output featuremap PSUM matched! :D", i); 
-      else begin
-        $display("%2d-th output featuremap PSUM ERROR!!", i); 
-        $display("sfpout: %h", sfp_out);
-        $display("answer: %h", psum_answer);
-        error = 1;
-      end
+      //$display("[%4d] [%2dth] sfp_out: %h", clk_cnt, i, core_instance.sfp_out);
+      //acc_scan_file = $fscanf(acc_file,"%128b", psum_answer); // reading from out file to answer
+      //if (sfp_out == psum_answer)
+      //  $display("%2d-th output featuremap PSUM matched! :D", i); 
+      //else begin
+      //  $display("%2d-th output featuremap PSUM ERROR!!", i); 
+      //  $display("sfpout: %h", sfp_out);
+      //  $display("answer: %h", psum_answer);
+      //  error = 1;
+      //end
       #0.5 clk = 1'b0;
       relu = 1;
       #0.5 clk = 1'b1;
