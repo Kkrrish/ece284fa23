@@ -1,3 +1,4 @@
+`define INST_SFP_RELU   34
 `define INST_SFP_ACC    33
 `define INST_CEN_PMEM   32
 `define INST_WEN_PMEM   31
@@ -13,11 +14,12 @@ module corelet #(
     parameter row = 8,
     parameter col = 8,
     parameter bw = 4,
-    parameter psum_bw = 16
+    parameter psum_bw = 16,
+    parameter inst_width = 35
 )(
     input                   clk,
     input                   reset,
-    input   [33:0]          inst,
+    input   [inst_width-1:0] inst,
     input   [bw*row-1:0]    data_in_w,
     input   [psum_bw*col-1:0]   data_in_n,
     output  [psum_bw*col-1:0]   data_out,
@@ -32,7 +34,6 @@ wire    [row*bw-1:0]    l0_data_out;
 wire                    l0_full;
 wire                    l0_ready;
 
-//@FIXME: Assign inputs
 assign l0_rd = inst[`INST_L0_RD];
 assign l0_wr = inst[`INST_L0_WR];
 assign l0_data_in = data_in_w;
@@ -41,7 +42,7 @@ l0 #(.row(row), .bw(bw)) l0_inst(
     .clk(clk),
     .wr(l0_wr),
     .rd(l0_rd),
-    .reset(reset),
+    .reset(1'b0), //@FIXME: Is it okay to never reset L0?
     .in(l0_data_in),
     .out(l0_data_out),
     .o_full(l0_full),
@@ -55,7 +56,6 @@ wire [1:0]              mac_inst_w;
 wire [psum_bw*col-1:0]  mac_out_s;
 wire [col-1:0]          mac_valid;
 
-//@FIXME: Assign inputs
 assign mac_inst_w       = inst[1:0];
 assign mac_data_in_w    = l0_data_out;
 assign mac_data_in_n    = 0; //@FIXME
@@ -78,7 +78,6 @@ wire                    ofifo_full;
 wire                    ofifo_ready;
 wire                    ofifo_valid;
 
-//@FIXME: Assign inputs
 assign ofifo_data_in = mac_out_s;
 assign ofifo_wr = mac_valid;
 assign ofifo_rd = inst[`INST_OFIFO_RD];
@@ -87,7 +86,7 @@ assign data_out = ofifo_data_out;
 // OFIFO
 ofifo #(.col(col), .bw(psum_bw)) ofifo_inst(
     .clk(clk),
-    .reset(reset),
+    .reset(1'b0), //@FIXME: Is it okay to never reset OFIFO?
     .rd(ofifo_rd),
     .wr(ofifo_wr),
     .in(ofifo_data_in),
@@ -106,7 +105,7 @@ wire                    sfp_relu;
 assign sfp_in = data_in_n;
 assign sfp_thres = 1'b0;
 assign sfp_acc = inst[`INST_SFP_ACC];
-assign sfp_relu = 1'b0; //@FIXME
+assign sfp_relu = inst[`INST_SFP_RELU];
 
 genvar i;
 for(i=1; i<col+1; i=i+1) begin : sfp_num

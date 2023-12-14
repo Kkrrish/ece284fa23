@@ -14,11 +14,12 @@ parameter col = 8;
 parameter row = 8;
 parameter len_nij = 36;
 parameter len_nij_dim_1 = 6;
+parameter inst_width = 35;
 
 reg clk = 0;
 reg reset = 1;
 
-wire [33:0] inst_q; 
+wire [inst_width-1:0] inst_q; 
 
 reg [1:0]  inst_w_q = 0; 
 reg [bw*row-1:0] D_xmem_q = 0;
@@ -42,11 +43,13 @@ reg l0_wr_q = 0;
 reg execute_q = 0;
 reg load_q = 0;
 reg acc_q = 0;
+reg relu_q = 0;
+reg relu = 0;
 reg acc = 0;
 
 reg [1:0]  inst_w; 
 reg [bw*row-1:0] D_xmem;
-reg [psum_bw*col-1:0] answer;
+reg [psum_bw*col-1:0] answer, psum_answer;
 
 
 reg ofifo_rd;
@@ -111,6 +114,7 @@ integer stat_file;
 integer mac_ld_count = 0;
 integer mac_exec_count = 0;
 
+assign inst_q[34] = relu_q;
 assign inst_q[33] = acc_q;
 assign inst_q[32] = CEN_pmem_q;
 assign inst_q[31] = WEN_pmem_q;
@@ -229,6 +233,7 @@ task read_ofifo_to_pmem;
     end
 
     #0.5 clk = 1'b0;  WEN_pmem = 1;  CEN_pmem = 1; ofifo_rd = 0; A_pmem = A_pmem + 1;
+    ofifo_pop_count=ofifo_pop_count-1; //It gets incremented one more than needed in the above loop
     #0.5 clk = 1'b1;
   end
 endtask
@@ -402,16 +407,15 @@ initial begin
     begin
       for (kij_xmem=0; kij_xmem<9; kij_xmem=kij_xmem+1) begin  // kij loop
       
+        //$display("[%4d] Kij_xmem %2d waiting on Kij_load %2d to increment, to start", clk_cnt, kij_xmem, kij_load);
         wait(kij_xmem==kij_load);
         kernel_using_xmem = 1;
-        tick_tock(1);   
 
         /////// Kernel data writing to memory ///////
         $display("==== Writing kernel data for kij %2d to XMEM ====", kij_xmem);
         A_xmem = 11'b10000000000;
 
         write_kernel_xmem(A_xmem, col);
-        tick_tock(1);
         kernel_using_xmem = 0;
         /////////////////////////////////////
         tick_tock(5);
@@ -421,15 +425,12 @@ initial begin
 
     begin
       for (kij_load=0; kij_load<9; kij_load=kij_load+1) begin  // kij loop
+        //$display("[%4d] Kij_load %2d waiting on Kij_xmem %2d to increment, to start", clk_cnt, kij_load, kij_xmem);
         wait(kij_xmem==kij_load+1);
+        tick_tock(1);
         xmem_busy = 1;
-        #0.5 clk = 1'b0;   reset = 1;
-        #0.5 clk = 1'b1; 
 
-        tick_tock(2);
-
-        #0.5 clk = 1'b0;   reset = 0;
-        #0.5 clk = 1'b1; 
+        //$display("[%4d] KijLoad %2d starting", clk_cnt, kij_load);
 
         if(l0_mac_series) begin
           /////// Kernel data writing to L0 ///////
@@ -448,7 +449,10 @@ initial begin
             end
 
             begin
-              tick_tock(1);
+              #0.5 clk = 1'b0;   reset = 1;
+              #0.5 clk = 1'b1; 
+              #0.5 clk = 1'b0;   reset = 0;
+              #0.5 clk = 1'b1;
               loading_l0_to_mac(col-1, 1, 0);
               tick_tock(1);
               loading_l0_to_mac(len_nij-1, 0, 1);
@@ -503,24 +507,53 @@ initial begin
   tick_tock(2);
 
   ////////// Accumulation /////////
-  out_file = $fopen("./stimulus_files/psum.txt", "r");  
+  out_file = $fopen("./stimulus_files/output.txt", "r");  
 
   // Following three lines are to remove the first three comment lines of the file
   out_scan_file = $fscanf(out_file,"%s", answer); 
   out_scan_file = $fscanf(out_file,"%s", answer); 
   out_scan_file = $fscanf(out_file,"%s", answer); 
+  
+  acc_file = $fopen("./stimulus_files/psum.txt", "r");  
 
+  // Following three lines are to remove the first three comment lines of the file
+  acc_scan_file = $fscanf(acc_file,"%s", answer); 
+  acc_scan_file = $fscanf(acc_file,"%s", answer); 
+  acc_scan_file = $fscanf(acc_file,"%s", answer);
   error = 0;
 
   $display("############ Verification Start during accumulation #############"); 
   accumulation_wip = 1;
   for (i=0; i<len_onij+1; i=i+1) begin 
 
-    #0.5 clk = 1'b0; 
+    #0.5 clk = 1'b0;
     #0.5 clk = 1'b1; 
 
     if (i>0) begin
       $display("[%4d] [%2dth] sfp_out: %h", clk_cnt, i, core_instance.sfp_out);
+      acc_scan_file = $fscanf(acc_file,"%128b", psum_answer); // reading from out file to answer
+      if (sfp_out == psum_answer)
+        $display("%2d-th output featuremap PSUM matched! :D", i); 
+      else begin
+        $display("%2d-th output featuremap PSUM ERROR!!", i); 
+        $display("sfpout: %h", sfp_out);
+        $display("answer: %h", psum_answer);
+        error = 1;
+      end
+      #0.5 clk = 1'b0;
+      relu = 1;
+      #0.5 clk = 1'b1;
+      #0.5 clk = 1'b0;
+      
+      CEN_pmem = 0;
+      WEN_pmem = 0;
+      A_pmem = (11'b10000000000) + i;
+      #0.5 clk = 1'b1;
+    end
+   
+    #0.5 clk = 1'b0;
+    if(i>0) begin
+      $display("[%4d] [%2dth] After RELU sfp_out: %h", clk_cnt, i, core_instance.sfp_out);
       out_scan_file = $fscanf(out_file,"%128b", answer); // reading from out file to answer
       if (sfp_out == answer)
         $display("%2d-th output featuremap Data matched! :D", i); 
@@ -531,6 +564,12 @@ initial begin
         error = 1;
       end
     end
+
+    acc = 0;
+    relu = 0;
+    CEN_pmem = 1;
+    WEN_pmem = 1; 
+    #0.5 clk = 1'b1; 
 
     if(i < len_onij) begin 
       #0.5 clk = 1'b0; reset = 1;
@@ -604,6 +643,7 @@ always @ (posedge clk) begin
    A_xmem_q   <= A_xmem;
    ofifo_rd_q <= ofifo_rd;
    acc_q      <= acc;
+   relu_q     <= relu;
    ififo_wr_q <= ififo_wr;
    ififo_rd_q <= ififo_rd;
    l0_rd_q    <= l0_rd;

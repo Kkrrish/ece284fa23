@@ -2,11 +2,12 @@ module core #(
     parameter row = 8,
     parameter col = 8,
     parameter bw = 4,
-    parameter psum_bw = 16
+    parameter psum_bw = 16,
+    parameter inst_width = 35
 )(
     input                   clk,
     input                   reset,
-    input   [33:0]          inst,
+    input   [inst_width-1:0] inst,
     input   [bw*row-1:0]    D_xmem,
     output                  ofifo_valid,
     output  [psum_bw*col-1:0] sfp_out
@@ -43,8 +44,7 @@ wire [psum_bw*col-1:0] pmem_data_out;
 assign pmem_chip_en = inst[`INST_CEN_PMEM];
 assign pmem_wr_en   = inst[`INST_WEN_PMEM];
 assign pmem_addr_in = inst[`INST_A_PMEM];
-//assign pmem_data_in = corelet_sfp_out;
-assign pmem_data_in = corelet_inst.ofifo_data_out;
+assign pmem_data_in = inst[`INST_OFIFO_RD] ? corelet_inst.ofifo_data_out : corelet_sfp_out;
 
 sram_32b_w2048 #(.num(2048), .width(128)) pmem_inst(
     .CLK(clk),
