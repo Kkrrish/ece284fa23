@@ -15,12 +15,13 @@ module corelet #(
     parameter col = 8,
     parameter bw = 4,
     parameter psum_bw = 16,
-    parameter inst_width = 35
+    parameter inst_width = 35,
+    parameter channels_per_pe = 1
 )(
     input                   clk,
     input                   reset,
     input   [inst_width-1:0] inst,
-    input   [bw*row-1:0]    data_in_w,
+    input   [channels_per_pe*bw*row-1:0]    data_in_w,
     input   [psum_bw*col-1:0]   data_in_n,
     output  [psum_bw*col-1:0]   data_out,
     output  [psum_bw*col-1:0]   sfp_out
@@ -29,8 +30,8 @@ module corelet #(
 // L0
 wire                    l0_wr;
 wire                    l0_rd;
-wire    [row*bw-1:0]    l0_data_in;
-wire    [row*bw-1:0]    l0_data_out;
+wire    [row*channels_per_pe*bw-1:0]    l0_data_in;
+wire    [row*channels_per_pe*bw-1:0]    l0_data_out;
 wire                    l0_full;
 wire                    l0_ready;
 
@@ -38,7 +39,7 @@ assign l0_rd = inst[`INST_L0_RD];
 assign l0_wr = inst[`INST_L0_WR];
 assign l0_data_in = data_in_w;
 
-l0 #(.row(row), .bw(bw)) l0_inst(
+l0 #(.row(row), .bw(channels_per_pe*bw)) l0_inst(
     .clk(clk),
     .wr(l0_wr),
     .rd(l0_rd),
@@ -50,7 +51,7 @@ l0 #(.row(row), .bw(bw)) l0_inst(
 );
 
 // MAC Array
-wire [bw*row-1:0]       mac_data_in_w;
+wire [channels_per_pe*bw*row-1:0]       mac_data_in_w;
 wire [psum_bw*col-1:0]  mac_data_in_n;
 wire [1:0]              mac_inst_w;
 wire [psum_bw*col-1:0]  mac_out_s;
@@ -60,7 +61,7 @@ assign mac_inst_w       = inst[1:0];
 assign mac_data_in_w    = l0_data_out;
 assign mac_data_in_n    = 0; //@FIXME
 
-mac_array #(.bw(bw), .psum_bw(psum_bw), .col(col), .row(row)) mac_array_inst(
+mac_array #(.bw(bw), .psum_bw(psum_bw), .col(col), .row(row), .channels_per_pe(channels_per_pe)) mac_array_inst(
     .clk(clk),
     .reset(reset),
     .in_w(mac_data_in_w),

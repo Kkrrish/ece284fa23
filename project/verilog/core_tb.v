@@ -16,13 +16,19 @@ parameter len_nij = 36;
 parameter len_nij_dim_1 = 6;
 parameter inst_width = 35;
 
+`ifdef TWO_IC_PER_PE
+parameter channels_per_pe = 2;
+`else
+parameter channels_per_pe = 1;
+`endif
+
 reg clk = 0;
 reg reset = 1;
 
 wire [inst_width-1:0] inst_q; 
 
 reg [1:0]  inst_w_q = 0; 
-reg [bw*row-1:0] D_xmem_q = 0;
+reg [channels_per_pe*bw*row-1:0] D_xmem_q = 0;
 reg CEN_xmem = 1;
 reg WEN_xmem = 1;
 reg [10:0] A_xmem = 0;
@@ -48,7 +54,7 @@ reg relu = 0;
 reg acc = 0;
 
 reg [1:0]  inst_w; 
-reg [bw*row-1:0] D_xmem;
+reg [channels_per_pe*bw*row-1:0] D_xmem;
 reg [psum_bw*col-1:0] answer, psum_answer;
 
 
@@ -85,6 +91,7 @@ integer l0_consec_wr_count = 0;
 integer mac_consec_count = 0;
 
 // Parallelising some stages
+integer t_to_xmem_per_channel = 0;
 integer t_sram_to_l0 = 0;
 integer t_l0_to_mac = 0;
 wire l0_mac_series = 0;
@@ -130,7 +137,7 @@ assign inst_q[2]   = l0_wr_q;
 assign inst_q[1]   = execute_q; 
 assign inst_q[0]   = load_q; 
 
-core  #(.bw(bw), .col(col), .row(row)) core_instance (
+core  #(.bw(bw), .col(col), .row(row), .channels_per_pe(channels_per_pe)) core_instance (
   .clk(clk), 
   .inst(inst_q),
   .ofifo_valid(ofifo_valid),
@@ -241,7 +248,9 @@ endtask
 task write_activation_xmem;
   input integer count;
   begin
-  x_file = $fopen("./stimulus_files/activation.txt", "r");
+  if(channels_per_pe == 1) x_file = $fopen("./stimulus_files/1_ic_per_pe/activation.txt", "r");
+  if(channels_per_pe == 2) x_file = $fopen("./stimulus_files/2_ic_per_pe/activation.txt", "r");
+  
   // Following three lines are to remove the first three comment lines of the file
   x_scan_file = $fscanf(x_file,"%s", captured_data);
   x_scan_file = $fscanf(x_file,"%s", captured_data);
@@ -251,7 +260,8 @@ task write_activation_xmem;
   $display("==== Writing activation data to XMEM ====");
   for (t=0; t<count; t=t+1) begin  
     #0.5 clk = 1'b0;
-    x_scan_file = $fscanf(x_file,"%32b", D_xmem);
+    if(channels_per_pe == 1) x_scan_file = $fscanf(x_file,"%32b", D_xmem[0 +: 32]);
+    if(channels_per_pe == 2) x_scan_file = $fscanf(x_file,"%64b", D_xmem[0 +: 64]);
     WEN_xmem = 0;
     CEN_xmem = 0;
     if (t>0) A_xmem = A_xmem + 1;
@@ -277,7 +287,8 @@ task write_kernel_xmem;
     A_xmem = start_addr;
     for (t=0; t<count; t=t+1) begin  
       #0.5 clk = 1'b0;
-      w_scan_file = $fscanf(w_file,"%32b", D_xmem);
+      if(channels_per_pe == 1) w_scan_file = $fscanf(w_file,"%32b", D_xmem[0 +: 32]);
+      if(channels_per_pe == 2) w_scan_file = $fscanf(w_file,"%64b", D_xmem[0 +: 64]);
       WEN_xmem = 0;
       CEN_xmem = 0;
       if (t>0) A_xmem = A_xmem + 1;
@@ -315,6 +326,7 @@ initial begin
   end
 end
 
+// Thread to monitor L0 writes
 initial begin
   forever begin
     #0.5;
@@ -328,6 +340,7 @@ initial begin
   end
 end
 
+// Thread to monitor MAC inputs
 initial begin
   forever begin
     #0.5;
@@ -341,7 +354,7 @@ initial begin
   end
 end
 
-// Temporary Thread to monitor outputs from MAC Array
+// Thread to monitor outputs from MAC Array
 initial begin
   forever begin
     #0.5;
@@ -350,7 +363,7 @@ initial begin
   end
 end
 
-// Temporary Thread to monitor writes to PMEM
+// Thread to monitor writes to PMEM
 initial begin
   forever begin
     #0.5;
@@ -395,9 +408,9 @@ initial begin
   write_activation_xmem(len_nij);
   activation_using_xmem = 0;
   
-  w_file_name = "./stimulus_files/weight.txt";  
+  if(channels_per_pe == 1) w_file = $fopen("./stimulus_files/1_ic_per_pe/weight.txt", "r");
+  if(channels_per_pe == 2) w_file = $fopen("./stimulus_files/2_ic_per_pe/weight.txt", "r");
 
-  w_file = $fopen(w_file_name, "r");
   // Following three lines are to remove the first three comment lines of the file
   w_scan_file = $fscanf(w_file,"%s", captured_data);
   w_scan_file = $fscanf(w_file,"%s", captured_data);
@@ -507,14 +520,16 @@ initial begin
   tick_tock(2);
 
   ////////// Accumulation /////////
-  out_file = $fopen("./stimulus_files/output.txt", "r");  
+  if(channels_per_pe == 1) out_file = $fopen("./stimulus_files/1_ic_per_pe/output.txt", "r");
+  if(channels_per_pe == 2) out_file = $fopen("./stimulus_files/2_ic_per_pe/output.txt", "r");
 
   // Following three lines are to remove the first three comment lines of the file
   out_scan_file = $fscanf(out_file,"%s", answer); 
   out_scan_file = $fscanf(out_file,"%s", answer); 
   out_scan_file = $fscanf(out_file,"%s", answer); 
   
-  acc_file = $fopen("./stimulus_files/psum.txt", "r");  
+  if(channels_per_pe == 1) acc_file = $fopen("./stimulus_files/1_ic_per_pe/psum.txt", "r");
+  if(channels_per_pe == 2) acc_file = $fopen("./stimulus_files/2_ic_per_pe/psum.txt", "r");  
 
   // Following three lines are to remove the first three comment lines of the file
   acc_scan_file = $fscanf(acc_file,"%s", answer); 

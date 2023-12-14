@@ -6,10 +6,11 @@ module mac_array (clk, reset, out_s, in_w, in_n, inst_w, valid);
   parameter psum_bw = 16;
   parameter col = 8;
   parameter row = 8;
+  parameter channels_per_pe = 1;
 
   input  clk, reset;
   output [psum_bw*col-1:0] out_s;
-  input  [row*bw-1:0] in_w; // inst[1]:execute, inst[0]: kernel loading
+  input  [row*channels_per_pe*bw-1:0] in_w; // inst[1]:execute, inst[0]: kernel loading
   input  [1:0] inst_w;
   input  [psum_bw*col-1:0] in_n;
   output [col-1:0] valid;
@@ -24,10 +25,10 @@ module mac_array (clk, reset, out_s, in_w, in_n, inst_w, valid);
 
   genvar i;
   for (i=1; i < row+1 ; i=i+1) begin : row_num
-      mac_row #(.bw(bw), .psum_bw(psum_bw)) mac_row_instance (
+      mac_row #(.bw(bw), .psum_bw(psum_bw), .channels_per_pe(channels_per_pe)) mac_row_instance (
       .clk(clk),
       .reset(reset),
-      .in_w(in_w[bw*i-1:bw*(i-1)]),
+      .in_w(in_w[channels_per_pe*bw*i-1:channels_per_pe*bw*(i-1)]),
       .inst_w(inst_w_temp[2*i-1:2*(i-1)]),
       .in_n(temp[psum_bw*col*i-1:psum_bw*col*(i-1)]),
       .valid(valid_temp[i*col-1:(i-1)*col]),

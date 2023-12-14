@@ -4,10 +4,11 @@ module mac_tile (clk, out_s, in_w, out_e, in_n, inst_w, inst_e, reset);
 
 parameter bw = 4;
 parameter psum_bw = 16;
+parameter channels_per_pe = 1;
 
 output [psum_bw-1:0] out_s;
-input  [bw-1:0] in_w; // inst[1]:execute, inst[0]: kernel loading
-output [bw-1:0] out_e; 
+input  [channels_per_pe*bw-1:0] in_w; // inst[1]:execute, inst[0]: kernel loading
+output [channels_per_pe*bw-1:0] out_e; 
 input  [1:0] inst_w;
 output [1:0] inst_e;
 input  [psum_bw-1:0] in_n;
@@ -15,12 +16,12 @@ input  clk;
 input  reset;
 
 reg [1:0] inst_q;
-reg [bw-1:0] a_q, b_q;
+reg [channels_per_pe*bw-1:0] a_q, b_q;
 reg [psum_bw-1:0] c_q;
 reg load_ready_q;
 wire [psum_bw-1:0] mac_out;
 
-mac #(.bw(bw), .psum_bw(psum_bw)) mac_instance (
+mac #(.bw(bw), .psum_bw(psum_bw), .channels_per_pe(channels_per_pe)) mac_instance (
         .a(a_q), 
         .b(b_q),
         .c(c_q),
