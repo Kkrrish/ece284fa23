@@ -1,1 +1,2 @@
-`define TWO_IC_PER_PE 2
+// This file should be included ONLY if you want to run with TWO Input Channels per MAC instance
+`define TWO_IC_PER_PE
