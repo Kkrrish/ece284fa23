@@ -9,6 +9,7 @@
 ./verilog/fifo_mux_8_1.v
 ./verilog/fifo_mux_16_1.v
 ./verilog/fifo_depth64.v
+./verilog/fifo_depth16.v
 ./verilog/l0.v
 ./verilog/ofifo.v
 ./verilog/corelet.v

@@ -109,6 +109,7 @@ assign sfp_acc = inst[`INST_SFP_ACC];
 assign sfp_relu = inst[`INST_SFP_RELU];
 
 genvar i;
+generate
 for(i=1; i<col+1; i=i+1) begin : sfp_num
     sfp #(.bw(psum_bw), .psum_bw(psum_bw)) sfp_inst(
         .clk(clk),
@@ -120,5 +121,6 @@ for(i=1; i<col+1; i=i+1) begin : sfp_num
         .out(sfp_out[psum_bw*i-1:psum_bw*(i-1)])
     );
 end
+endgenerate
 
 endmodule

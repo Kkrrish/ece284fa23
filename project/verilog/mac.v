@@ -20,11 +20,13 @@ wire signed [bw-1:0] b1[channels_per_pe-1:0];
 wire signed [2*bw+1:0] product;
 
 genvar i;
-for(i = 0; i < channels_per_pe; i = i+1) begin
+generate
+for(i = 0; i < channels_per_pe; i = i+1) begin : mac_op 
     assign b1[i] = b[i*bw+:bw];
     assign a_pad1[i] = {1'b0, a[i*bw+:bw]}; // force to be unsigned number
     assign product1[i] = a_pad1[i] * b1[i];
 end
+endgenerate
 
 `ifdef TWO_IC_PER_PE
 assign product = (product1[0] + product1[1]);
