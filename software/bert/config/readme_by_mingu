@@ -1,5 +1,0 @@
-- how to define the "total_steps" ?
-Please check the training file's total number of data lines.
-If it is X lines, "X*n_epochs/batch_size" is your "total_setps" number.
-In addition, for bert large, batch size 32 does not work due to the limited memory.
-Pleaes use 16.
