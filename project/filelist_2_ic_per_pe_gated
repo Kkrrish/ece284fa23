@@ -1,0 +1,17 @@
+./verilog_gated/config_2_ic_per_pe
+./verilog_gated/sfp.v
+./verilog_gated/mac.v
+./verilog_gated/mac_row.v
+./verilog_gated/mac_array.v
+./verilog_gated/mac_tile.v
+./verilog_gated/sram_32b_w2048.v
+./verilog_gated/fifo_mux_2_1.v
+./verilog_gated/fifo_mux_8_1.v
+./verilog_gated/fifo_mux_16_1.v
+./verilog_gated/fifo_depth64.v
+./verilog_gated/fifo_depth16.v
+./verilog_gated/l0.v
+./verilog_gated/ofifo.v
+./verilog_gated/corelet.v
+./verilog_gated/core.v
+./verilog_gated/core_tb.v
